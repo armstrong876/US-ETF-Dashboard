@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | US Vested ETF Screener</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base:       #02040a; /* Darker charcoal */
+            --bg-gradient:   linear-gradient(135deg, #02040a 0%, #0a1024 100%); /* Deep navy mix */
+            --bg-surface:    #0f1117;
+            --bg-card:       rgba(26, 31, 46, 0.4);
+            --accent:        #6366f1;
+            --accent-glow:   rgba(99,102,241,0.25);
+            --text-primary:  #f0f2ff;
+            --text-secondary:#8b9ab5;
+            --text-muted:    #4b5672;
+            --border:        rgba(255,255,255,0.07);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: var(--bg-gradient); 
+            color: var(--text-primary); 
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ── Floating Header ─────── */
+        .page-header {
+            position: absolute;
+            top: 40px;
+            left: 60px; /* Moved to Left */
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header-logo {
+            width: 44px; /* Bigger logo */
+            height: 44px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 30px rgba(99,102,241,0.5);
+        }
+
+        .header-brand {
+            font-size: 22px; /* Bigger text */
+            font-weight: 800;
+            letter-spacing: -1px;
+            background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* ── Main Layout ─────────── */
+        .login-wrapper {
+            display: grid;
+            grid-template-columns: 1.3fr 0.7fr;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ── Left Side (Hero) ────── */
+        .hero-panel {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 80px 80px 80px;
+            border-right: 1px solid rgba(255,255,255,0.05);
+            overflow: hidden;
+        }
+
+        .hero-panel::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: url('armstrong_vibrant_hero.png') center/cover no-repeat;
+            filter: brightness(0.4); /* 40% brightness */
+            z-index: 0;
+        }
+
+        .hero-panel::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 40% 50%, rgba(2,4,10,0.1) 0%, rgba(2,4,10,0.6) 100%);
+            z-index: 1;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            max-width: 650px;
+        }
+
+        .hero-title {
+            font-size: 84px;
+            line-height: 0.95;
+            font-weight: 900;
+            letter-spacing: -4px;
+            background: linear-gradient(135deg, #ffffff 30%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 24px;
+            text-transform: uppercase;
+            filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5));
+        }
+
+        .hero-sub {
+            font-size: 22px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            font-family: 'JetBrains Mono', monospace;
+            opacity: 0.9;
+        }
+
+        .hero-accent-bar {
+            width: 120px;
+            height: 8px;
+            background: linear-gradient(90deg, var(--accent), #8b5cf6);
+            margin-bottom: 40px;
+            border-radius: 4px;
+            box-shadow: 0 0 32px var(--accent-glow);
+        }
+
+        /* ── Right Side (Form) ───── */
+        .form-panel {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+            position: relative;
+            z-index: 5;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 440px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            padding: 56px;
+            box-shadow: 0 48px 100px rgba(0,0,0,0.8);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            position: relative;
+        }
+
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: -1px; left: 10%; right: 10%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        }
+
+        .login-header {
+            margin-bottom: 40px;
+            text-align: center;
+        }
+
+        .login-header h1 {
+            font-size: 30px;
+            font-weight: 900;
+            margin-bottom: 12px;
+            letter-spacing: -1px;
+            color: #fff;
+        }
+
+        .login-header p {
+            font-size: 14px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .input-group {
+            margin-bottom: 28px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            margin-bottom: 12px;
+        }
+
+        .input-group input {
+            width: 100%;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px 20px;
+            color: var(--text-primary);
+            font-size: 15px;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: rgba(99,102,241,0.1);
+            box-shadow: 0 0 30px var(--accent-glow);
+            transform: translateY(-2px);
+        }
+
+        /* Captcha */
+        .captcha-area {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px 24px;
+            margin-bottom: 40px;
+        }
+
+        .captcha-code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 6px;
+            color: #fff;
+            user-select: none;
+            text-shadow: 0 0 10px rgba(255,255,255,0.3);
+        }
+
+        .captcha-refresh {
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: all 0.3s;
+        }
+
+        .captcha-refresh:hover {
+            color: var(--accent);
+            transform: rotate(45deg);
+        }
+
+        .login-btn {
+            width: 100%;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 14px;
+            padding: 20px;
+            font-size: 16px;
+            font-weight: 900;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            box-shadow: 0 12px 32px var(--accent-glow);
+        }
+
+        .login-btn:hover {
+            background: #4f46e5;
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 20px 48px var(--accent-glow);
+        }
+
+        .login-btn:active {
+            transform: translateY(0) scale(1);
+        }
+
+        .error-msg {
+            color: #ef4444;
+            font-size: 13px;
+            font-weight: 700;
+            margin-top: 24px;
+            text-align: center;
+            display: none;
+            padding: 10px;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 10px;
+            animation: shake 0.4s ease-in-out;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            75% { transform: translateX(4px); }
+        }
+
+        .footer-links {
+            margin-top: 40px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+        }
+
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.3s;
+            font-weight: 600;
+        }
+
+        .footer-links a:hover {
+            color: var(--accent);
+        }
+
+        @media (max-width: 1200px) {
+            .hero-title { font-size: 64px; }
+            .login-wrapper { grid-template-columns: 1fr; }
+            .hero-panel { display: none; }
+            .page-header { left: 40px; top: 30px; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="page-header">
+        <div class="header-logo">
+            <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
+                <path d="M6 20L11 12L15 17L19 9L22 13" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+        <div class="header-brand">Armstrong Capital</div>
+    </header>
+
+    <div class="login-wrapper">
+        <div class="hero-panel">
+            <div class="hero-content">
+                <div class="hero-accent-bar"></div>
+                <h2 class="hero-title">US Vested<br>ETF Screener</h2>
+                <p class="hero-sub">Momentum Dashboard</p>
+            </div>
+        </div>
+
+        <div class="form-panel">
+            <div class="login-card">
+                <div class="login-header">
+                    <h1>MEMBER LOGIN</h1>
+                    <p>Enter credentials to access the portfolio portal</p>
+                </div>
+
+                <div class="input-group">
+                    <label>Identification Key</label>
+                    <input type="text" id="userId" placeholder="User ID / PAN">
+                </div>
+
+                <div class="input-group">
+                    <label>Security Password</label>
+                    <input type="password" id="password" placeholder="••••••••">
+                </div>
+
+                <div class="input-group">
+                    <label>Human Verification</label>
+                    <input type="text" id="captchaInput" placeholder="Enter Code">
+                </div>
+
+                <div class="captcha-area">
+                    <div id="captchaCode" class="captcha-code">TPS5F5</div>
+                    <div class="captcha-refresh" onclick="refreshCaptcha()">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                    </div>
+                </div>
+
+                <button class="login-btn" onclick="handleLogin()">LOGIN</button>
+                <div id="errorMessage" class="error-msg"></div>
+
+                <div class="footer-links">
+                    <a href="#">Forgot Password?</a>
+                    <a href="#">Member Support</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script>
+        let currentCaptcha = "TPS5F5";
+
+        function refreshCaptcha() {
+            const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            let res = "";
+            for(let i=0; i<6; i++) {
+                res += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            currentCaptcha = res;
+            document.getElementById('captchaCode').innerText = res.split('').join(' ');
+        }
+
+        function handleLogin() {
+            const uid = document.getElementById('userId').value;
+            const pass = document.getElementById('password').value;
+            const cap = document.getElementById('captchaInput').value.toUpperCase().replace(/\s/g, '');
+            const err = document.getElementById('errorMessage');
+
+            err.style.display = 'none';
+
+            if (cap !== currentCaptcha) {
+                err.innerText = "Verification failed. Please check the security code.";
+                err.style.display = 'block';
+                return;
+            }
+
+            const result = Auth.login(uid, pass);
+            if (result.success) {
+                window.location.href = 'index.html';
+            } else {
+                err.innerText = result.message;
+                err.style.display = 'block';
+            }
+        }
+
+        // Initialize
+        refreshCaptcha();
+    </script>
+</body>
+</html>

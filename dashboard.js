@@ -1,0 +1,594 @@
+/* ═══════════════════════════════════════════════════════════
+   Armstrong Capital — ETF Momentum Dashboard
+   dashboard.js  |  Full interactive logic
+═══════════════════════════════════════════════════════════ */
+
+'use strict';
+
+// ── State ─────────────────────────────────────────────────
+let DATA        = null;
+let filtered    = [];
+let sortCol     = 'momentum_score';
+let sortDir     = -1;   // -1 = descending, +1 = ascending
+let activeTab   = 'overview';
+let datasetMode = '100';
+
+const PERIODS_HEATMAP = ['1W','15D','1M','2M','3M','6M','9M','12M','2Y','3Y','5Y','7Y','10Y'];
+const PERIODS_REL     = ['1W','1M','3M','6M','12M','2Y','3Y','5Y'];
+
+// ── Bootstrap ────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  bindTabs();
+  loadData();
+});
+
+// ── Data Load ─────────────────────────────────────────────
+async function loadData() {
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  
+  if (isLocal) {
+    await syncData();
+  } else {
+    // If on Netlify, explain why Refresh doesn't trigger the local engine
+    showToast('Notice: Cloud Refresh is disabled. Please run the dashboard locally at http://localhost:5000 to trigger a sync.', 'error');
+    console.warn("Refresh button clicked on hosted site. Local server required for data sync.");
+  }
+
+  await fetchAndRender();
+}
+
+async function syncData() {
+  const overlay = document.getElementById('loadingOverlay');
+  const loadTitle = overlay.querySelector('.load-title');
+  const loadSub = overlay.querySelector('.load-sub');
+
+  showLoading(true);
+  loadTitle.textContent = "Updating Dashboard";
+  loadSub.textContent = "Step 1: Running Data Engines (v1.2)...";
+
+  try {
+    const res = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        include_all: datasetMode === 'all',
+        force: true // Forced for now to ensure we see the result
+      })
+    });
+    
+    if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+    }
+
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      loadTitle.textContent = "Cloud Sync Success!";
+      loadSub.textContent = "Today's data is now LIVE for your team.";
+      showToast(data.message, 'success');
+      await new Promise(r => setTimeout(r, 2000));
+    } else if (data.status === 'partial_success') {
+      loadTitle.textContent = "Sync Warning";
+      loadSub.textContent = "Local data OK. Cloud Sync FAILED: " + (data.error_detail || "Check console");
+      showToast(data.message, 'warning');
+      console.error("Netlify Sync Error:", data.error_detail);
+      await new Promise(r => setTimeout(r, 4000));
+    } else if (data.status === 'up_to_date') {
+      loadTitle.textContent = "Already Current";
+      loadSub.textContent = data.message;
+      showToast(data.message, 'info');
+      await new Promise(r => setTimeout(r, 1500));
+    } else {
+      throw new Error(data.message || "Unknown server error");
+    }
+  } catch (e) {
+    console.error("Sync Error:", e);
+    showToast('Refresh Failed: ' + e.message, 'error');
+    showLoading(false);
+    throw e; // prevent fetchAndRender if we really failed
+  }
+}
+
+async function fetchAndRender() {
+  showLoading(true);
+  hideError();
+  try {
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const file = datasetMode === 'all' ? 'dashboard_all.json' : 'dashboard.json';
+    const res = await fetch(file + '?nocache=' + Date.now());
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    DATA = await res.json();
+    processData();
+    showLoading(false);
+
+    const today = new Promise(resolve => {
+        const d = new Date();
+        resolve(d.toISOString().split('T')[0]);
+    });
+    const currentDay = await today;
+    const isUpToDate = DATA.as_of_date === currentDay;
+
+    if (!isLocal && DATA) {
+      if (isUpToDate) {
+        showToast('Success: Dashboard is up to date with today\'s market figures.', 'success');
+      } else {
+        showToast('Notice: Data shown is from ' + DATA.as_of_date + '. Admin: Use the local server to sync today\'s data.', 'info');
+      }
+    }
+  } catch (e) {
+    showLoading(false);
+    showError();
+    console.error('Failed to load data:', e);
+    showToast('Failed to fetch latest data.', 'error');
+  }
+}
+
+function showToast(msg, type = 'info') {
+  const container = document.getElementById('notification-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span>${msg}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 6000);
+}
+
+// ── Process & Render ──────────────────────────────────────
+function processData() {
+  // Meta bar
+  document.getElementById('updateText').textContent =
+    'Updated: ' + (DATA.last_updated || '—');
+  document.getElementById('asOfDate').textContent =
+    'As of: ' + (DATA.as_of_date || '—');
+
+  // Permission: Editor Only actions
+  if (!Auth.isEditor()) {
+    const rBtn = document.getElementById('refreshBtn');
+    if (rBtn) rBtn.style.display = 'none';
+  }
+
+  // Stats
+  const etfs = DATA.etfs || [];
+  const strong  = etfs.filter(e => e.signal === 'Strong').length;
+  const neutral = etfs.filter(e => e.signal === 'Neutral').length;
+  const weak    = etfs.filter(e => e.signal === 'Weak').length;
+
+  setStatVal('statTotal',    etfs.length, '');
+  setStatVal('statStrong',   strong,      'green');
+  setStatVal('statNeutral',  neutral,     'yellow');
+  setStatVal('statWeak',     weak,        'red');
+
+  const spy3m = DATA.spy_returns?.['3M'];
+  document.getElementById('spyScore').textContent =
+    spy3m != null ? fmtPct(spy3m) : '—';
+  colorizeVal(document.getElementById('spyScore'), spy3m);
+
+  const top1 = (DATA.top10 || [])[0];
+  document.getElementById('topEtfVal').textContent =
+    top1 ? `${top1.symbol}  ${fmtScore(top1.score)}` : '—';
+
+  // Populate category filter
+  populateCategoryFilter(etfs);
+
+  // Render all sections
+  filtered = [...etfs];
+  renderMarketBar();
+  applyFilters();
+  renderOverview();
+  renderHeatmap();
+  renderRankings();
+  renderSignals();
+  renderRelative();
+}
+
+// ── Category Filter Population ─────────────────────────────
+function populateCategoryFilter(etfs) {
+  const sel = document.getElementById('categoryFilter');
+  const cats = [...new Set(etfs.map(e => e.category).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">All Categories</option>';
+  cats.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c; opt.textContent = c;
+    sel.appendChild(opt);
+  });
+}
+
+// ── Filters & Sort ────────────────────────────────────────
+function applyFilters() {
+  if (!DATA) return;
+
+  const q      = document.getElementById('searchInput').value.trim().toLowerCase();
+  const signal = document.getElementById('signalFilter').value;
+  const cat    = document.getElementById('categoryFilter').value;
+  const asset  = document.getElementById('assetFilter').value;
+  const sortBy = document.getElementById('sortBy').value;
+
+  filtered = DATA.etfs.filter(e => {
+    if (q && !e.symbol.toLowerCase().includes(q) && !e.name?.toLowerCase().includes(q)) return false;
+    if (signal && e.signal !== signal) return false;
+    if (cat   && e.category   !== cat)   return false;
+    if (asset && e.asset_class !== asset) return false;
+    return true;
+  });
+
+  // Dynamic sort
+  filtered.sort((a, b) => {
+    let va = getSortValue(a, sortCol);
+    let vb = getSortValue(b, sortCol);
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === 'string') return va.localeCompare(vb) * sortDir;
+    return (va - vb) * sortDir;
+  });
+
+  document.getElementById('resultsCount').textContent =
+    `${filtered.length} of ${DATA.etfs.length} ETFs`;
+
+  renderMarketBar();
+  renderOverview();
+  renderHeatmap();
+  renderRelative();
+}
+
+function getSortValue(e, col) {
+  switch(col) {
+    case 'momentum_score': return e.momentum_score;
+    case 'aum':       return e.aum;
+    case 'er':        return e.er;
+    case 'pe':        return e.pe;
+    case 'beta':      return e.beta;
+    case 'alpha':     return e.alpha;
+    case 'holdings':  return e.holdings;
+    case 'top10_pct': return e.top10_pct;
+    case 'inception': return e.inception;
+    case 'category':  return e.category;
+    case 'name':      return e.name;
+    case 'symbol':    return e.symbol;
+    case 'ret_1M':  return e.returns?.['1M'];
+    case 'ret_3M':  return e.returns?.['3M'];
+    case 'ret_6M':  return e.returns?.['6M'];
+    case 'ret_12M': return e.returns?.['12M'];
+    case 'ret_1W':  return e.returns?.['1W'];
+    case 'ret_15D': return e.returns?.['15D'];
+    case 'ret_2M':  return e.returns?.['2M'];
+    case 'ret_9M':  return e.returns?.['9M'];
+    case 'ret_2Y':  return e.returns?.['2Y'];
+    case 'ret_3Y':  return e.returns?.['3Y'];
+    case 'ret_5Y':  return e.returns?.['5Y'];
+    case 'ret_7Y':  return e.returns?.['7Y'];
+    case 'ret_10Y': return e.returns?.['10Y'];
+    
+    // Relative strength columns
+    case 'rel_1W':  return e.vs_spy?.['1W'];
+    case 'rel_1M':  return e.vs_spy?.['1M'];
+    case 'rel_3M':  return e.vs_spy?.['3M'];
+    case 'rel_6M':  return e.vs_spy?.['6M'];
+    case 'rel_12M': return e.vs_spy?.['12M'];
+    case 'rel_2Y':  return e.vs_spy?.['2Y'];
+    case 'rel_3Y':  return e.vs_spy?.['3Y'];
+    case 'rel_5Y':  return e.vs_spy?.['5Y'];
+
+    default:        return null;
+  }
+}
+
+function handleSortSelect() {
+  const val = document.getElementById('sortBy').value;
+  if (!val) return;
+  sortCol = val;
+  sortDir = -1;
+  applyFilters();
+}
+
+function setSortCol(col) {
+  if (sortCol === col) sortDir = -sortDir;
+  else { sortCol = col; sortDir = -1; }
+  
+  const sortSelect = document.getElementById('sortBy');
+  const optionExists = Array.from(sortSelect.options).some(o => o.value === col);
+  if (optionExists) sortSelect.value = col;
+  else sortSelect.value = ""; 
+
+  applyFilters();
+}
+
+function toggleSortDir() {
+  sortDir = -sortDir;
+  applyFilters();
+}
+
+// ══════════════════════ MARKET BAR ══════════════════════════════
+function renderMarketBar() {
+  const container = document.getElementById('marketBar');
+  const indices = DATA.market_indices || [];
+  if (!indices.length) { container.style.display = 'none'; return; }
+  
+  container.style.display = 'grid';
+  container.innerHTML = indices.map(idx => buildMarketCard(idx)).join('');
+}
+
+function buildMarketCard(idx) {
+  const c1d = idx.chg_1d || 0;
+  const c3m = idx.chg_3m || 0;
+  const c6m = idx.chg_6m || 0;
+  const c1y = idx.chg_1y || 0;
+
+  const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  const getCl = (v) => v >= 0 ? 'green' : 'red';
+  
+  return `
+    <div class="market-card">
+      <div class="market-name">${idx.name}</div>
+      <div class="market-price-row">
+        <span class="market-price">${idx.price.toLocaleString()}</span>
+        <span class="market-chg-1d ${getCl(c1d)}">${fmt(c1d)} (1 day)</span>
+      </div>
+      <div class="market-stats-grid">
+        <div class="m-stat-row">
+          <div class="m-stat-sub">3M <span class="${getCl(c3m)}">${fmt(c3m)}</span></div>
+          <div class="m-stat-sub">6M <span class="${getCl(c6m)}">${fmt(c6m)}</span></div>
+          <div class="m-stat-sub">1Y <span class="${getCl(c1y)}">${fmt(c1y)}</span></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ══════════════════════ OVERVIEW TABLE ══════════════════════
+function renderOverview() {
+  const tbody = document.getElementById('overviewBody');
+  const rows  = filtered.map((e, i) => buildOverviewRow(e, i + 1)).join('');
+  tbody.innerHTML = rows;
+  updateTableHeaders('overviewTable');
+}
+
+function buildOverviewRow(e, rank) {
+  return `
+    <tr>
+      <td class="col-rank">${rank}</td>
+      <td class="sticky-col col-ticker">
+        <div class="ticker-box">
+          <span class="ticker-sym">${e.symbol}</span>
+        </div>
+      </td>
+      <td class="col-name">${e.name || '—'}</td>
+      <td>${e.category || '—'}</td>
+      <td>${fmtAUM(e.aum)}</td>
+      <td class="mono">${e.inception || '—'}</td>
+      <td class="mono">${e.pe ? e.pe.toFixed(2) : '—'}</td>
+      <td class="mono">${e.beta ? e.beta.toFixed(2) : '—'}</td>
+      <td class="mono">${e.alpha ? e.alpha.toFixed(2) : '—'}</td>
+      <td class="mono">${e.holdings || '—'}</td>
+      <td class="mono">${e.top10_pct ? e.top10_pct.toFixed(2) + '%' : '—'}</td>
+      <td class="mono">${fmtPct(e.er)}</td>
+    </tr>
+  `;
+}
+
+function renderHeatmap() {
+  const tbody = document.getElementById('heatmapBody');
+  const rows  = filtered.map((e, i) => buildHeatRow(e, i + 1)).join('');
+  tbody.innerHTML = rows;
+  updateTableHeaders('heatmapTable');
+}
+
+function updateTableHeaders(tableId) {
+  const btn = document.getElementById('sortDirBtn');
+  if (btn) btn.textContent = sortDir === -1 ? '↓ Desc' : '↑ Asc';
+
+  document.querySelectorAll(`#${tableId} th`).forEach(th => {
+    // Strip old arrows
+    th.textContent = th.textContent.replace(/ [↑↓↕]/g, '');
+    const occ = th.getAttribute('onclick');
+    if (occ && occ.includes(`'${sortCol}'`)) {
+      th.textContent += sortDir === -1 ? ' ↓' : ' ↑';
+    } else if (occ) {
+      th.textContent += ' ↕';
+    }
+  });
+}
+
+function buildHeatRow(e, rank) {
+  const rets = e.returns || {};
+  const cells = PERIODS_HEATMAP.map(p => heatCell(rets[p])).join('');
+  const ms    = e.momentum_score;
+  const scoreClass = ms == null ? '' : ms >= 15 ? 'score-high' : ms >= 5 ? 'score-mid' : 'score-low';
+
+  return `<tr>
+    <td class="col-rank sticky-col">${rank}</td>
+    <td class="col-ticker sticky-col">${e.symbol}</td>
+    <td class="col-name"  title="${esc(e.name)}">${esc(e.name)}</td>
+    <td class="col-cat"   title="${esc(e.category)}">${esc(e.category)}</td>
+    ${cells}
+    <td class="score-col ${scoreClass}">${ms != null ? ms.toFixed(2) : '—'}</td>
+    <td>${signalDisplay(e.signal)}</td>
+  </tr>`;
+}
+
+function heatCell(val) {
+  if (val == null) return `<td class="heat-neutral">—</td>`;
+  const cls = heatClass(val);
+  return `<td class="${cls}">${fmtPct(val)}</td>`;
+}
+
+function heatClass(v) {
+  if (v  >=  10) return 'heat-strong-pos';
+  if (v  >=   5) return 'heat-pos';
+  if (v  >=   1) return 'heat-slight-pos';
+  if (v  >=  -1) return 'heat-neutral';
+  if (v  >=  -5) return 'heat-slight-neg';
+  if (v  >= -10) return 'heat-neg';
+  return 'heat-strong-neg';
+}
+
+// ══════════════════════ RANKINGS TAB ════════════════════════
+function renderRankings() {
+  const top10    = DATA.top10    || [];
+  const bottom10 = DATA.bottom10 || [];
+
+  document.getElementById('top10Cards').innerHTML =
+    top10.map(r => buildRankCard(r, true)).join('');
+  document.getElementById('bottom10Cards').innerHTML =
+    bottom10.map(r => buildRankCard(r, false)).join('');
+}
+
+function buildRankCard(r, isTop) {
+  const scoreColor = isTop ? 'var(--green)' : 'var(--red)';
+  const r1m  = r.ret_1m  != null ? fmtPct(r.ret_1m)  : '—';
+  const r3m  = r.ret_3m  != null ? fmtPct(r.ret_3m)  : '—';
+  const r6m  = r.ret_6m  != null ? fmtPct(r.ret_6m)  : '—';
+  const r12m = r.ret_12m != null ? fmtPct(r.ret_12m) : '—';
+
+  return `
+  <div class="rank-card">
+    <span class="rank-num">${r.rank}</span>
+    <span class="rank-sym">${r.symbol}</span>
+    <span class="rank-name" title="${esc(r.name)}">${esc(r.name)}</span>
+    <span class="rank-score" style="color:${scoreColor}">${fmtScore(r.score)}</span>
+    <span class="rank-ret" style="color:${r.ret_3m>=0?'var(--green)':'var(--red)'}">${r3m}</span>
+    <span class="rank-ret" style="color:${r.ret_12m>=0?'var(--green)':'var(--red)'}">${r12m}</span>
+    <span class="rank-sig">${signalDisplay(r.signal)}</span>
+  </div>`;
+}
+
+// ══════════════════════ SIGNALS TAB ═════════════════════════
+function renderSignals() {
+  const etfs = DATA.etfs || [];
+  // Sort: Strong first, then Neutral, then Weak
+  const order = { Strong: 0, Neutral: 1, Weak: 2, 'N/A': 3 };
+  const sorted = [...etfs].sort((a, b) => (order[a.signal] ?? 3) - (order[b.signal] ?? 3) || (b.momentum_score ?? -999) - (a.momentum_score ?? -999));
+  const grid  = document.getElementById('signalsGrid');
+  const cards = sorted.map(e => buildSignalCard(e)).join('');
+  grid.innerHTML = cards;
+}
+
+function buildSignalCard(e) {
+  const ms  = e.momentum_score;
+  const sig = e.signal === 'Strong' ? 'strong'
+            : e.signal === 'Neutral' ? 'neutral' : 'weak';
+  const emoji = sig === 'strong' ? '🟢' : sig === 'neutral' ? '🟡' : '🔴';
+  const scoreClass = ms == null ? 'neu' : ms >= 5 ? 'pos' : 'neg';
+  const r1m  = e.returns?.['1M'];
+  const r3m  = e.returns?.['3M'];
+  const r12m = e.returns?.['12M'];
+
+  return `
+  <div class="signal-card sig-${sig}">
+    <div class="sig-top">
+      <span class="sig-ticker">${e.symbol}</span>
+      <span class="sig-emoji">${emoji}</span>
+    </div>
+    <div class="sig-name" title="${esc(e.name)}">${esc(e.name)}</div>
+    <div class="sig-score ${scoreClass}">${ms != null ? ms.toFixed(1) : '—'}</div>
+    <div class="sig-meta">
+      <span class="sig-micro ${r1m!=null&&r1m>=0?'pos':r1m!=null?'neg':''}">1M ${r1m!=null?fmtPct(r1m):'—'}</span>
+      <span class="sig-micro ${r3m!=null&&r3m>=0?'pos':r3m!=null?'neg':''}">3M ${r3m!=null?fmtPct(r3m):'—'}</span>
+      <span class="sig-micro ${r12m!=null&&r12m>=0?'pos':r12m!=null?'neg':''}">12M ${r12m!=null?fmtPct(r12m):'—'}</span>
+    </div>
+  </div>`;
+}
+
+// ══════════════════════ RELATIVE STRENGTH TAB ═══════════════
+function renderRelative() {
+  const tbody = document.getElementById('relBody');
+  const rows  = filtered.map((e, i) => buildRelRow(e, i + 1)).join('');
+  tbody.innerHTML = rows;
+  updateTableHeaders('relTable');
+}
+
+function buildRelRow(e, rank) {
+  const vs  = e.vs_spy || {};
+  const ms  = e.momentum_score;
+  const scoreClass = ms == null ? '' : ms >= 15 ? 'score-high' : ms >= 5 ? 'score-mid' : 'score-low';
+
+  const cells = PERIODS_REL.map(p => {
+    const v = vs[p];
+    if (v == null) return `<td class="heat-neutral">—</td>`;
+    return `<td class="${heatClass(v)}">${fmtPct(v)}</td>`;
+  }).join('');
+
+  return `<tr>
+    <td class="col-rank sticky-col">${rank}</td>
+    <td class="col-ticker sticky-col">${e.symbol}</td>
+    <td class="col-name" title="${esc(e.name)}">${esc(e.name)}</td>
+    ${cells}
+    <td class="score-col ${scoreClass}">${ms != null ? ms.toFixed(2) : '—'}</td>
+    <td>${signalDisplay(e.signal)}</td>
+  </tr>`;
+}
+
+// ══════════════════════ TABS ════════════════════════════════
+function bindTabs() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + tab).classList.add('active');
+      activeTab = tab;
+    });
+  });
+}
+
+function switchDataset(mode) {
+  if (datasetMode === mode) return;
+  datasetMode = mode;
+  document.getElementById('ds100').classList.toggle('active', mode === '100');
+  document.getElementById('dsAll').classList.toggle('active', mode === 'all');
+  loadData();
+}
+
+// ══════════════════════ HELPERS ═════════════════════════════
+function fmtAUM(v) {
+  if (!v) return '—';
+  if (v >= 1e12) return '$' + (v / 1e12).toFixed(2) + 'T';
+  if (v >= 1e9)  return '$' + (v / 1e9).toFixed(2) + 'B';
+  if (v >= 1e6)  return '$' + (v / 1e6).toFixed(2) + 'M';
+  return '$' + v.toLocaleString();
+}
+
+function fmtPct(v) {
+  if (v == null) return '—';
+  const sign = v >= 0 ? '+' : '';
+  return sign + v.toFixed(2) + '%';
+}
+
+function fmtScore(v) {
+  if (v == null) return '—';
+  const sign = v >= 0 ? '+' : '';
+  return sign + v.toFixed(2);
+}
+
+function signalDisplay(sig) {
+  if (!sig || sig === 'N/A') return 'N/A';
+  if (sig === 'Strong') return '🟢 Strong';
+  if (sig === 'Neutral') return '🟡 Neutral';
+  if (sig === 'Weak')   return '🔴 Weak';
+  return sig;
+}
+
+function colorizeVal(el, v) {
+  if (v == null) return;
+  el.style.color = v >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
+function setStatVal(id, val, colorClass) {
+  const el = document.querySelector(`#${id} .stat-value`);
+  if (!el) return;
+  el.textContent = val;
+  el.className = 'stat-value' + (colorClass ? ' ' + colorClass : '');
+}
+
+function esc(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showLoading(show) {
+  document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
+}
+
+function showError()  { document.getElementById('errorOverlay').style.display = 'flex'; }
+function hideError()  { document.getElementById('errorOverlay').style.display = 'none'; }

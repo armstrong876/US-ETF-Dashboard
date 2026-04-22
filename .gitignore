@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Project Specific
+mingit/
+auto_update.log
+git_installer.exe
+*.xlsx
+# (We keep dashboard.json as it's the data source for the dashboard)
