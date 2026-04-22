@@ -6,10 +6,10 @@
     'use strict';
 
     const AUTH_KEY = 'armstrong_auth_session';
+    const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
 
     const USERS = {
-        'admin': { pass: 'armstrong123', role: 'editor', name: 'Administrator' },
-        'team':  { pass: 'viewer123',    role: 'viewer', name: 'Team Member' }
+        'armstrongetf': { pass: 'Aetf@1500', role: 'editor', name: 'Armstrong Capital' }
     };
 
     window.Auth = {
@@ -36,7 +36,18 @@
         getSession: function() {
             const sessionData = localStorage.getItem(AUTH_KEY);
             if (!sessionData) return null;
-            return JSON.parse(sessionData);
+            
+            const session = JSON.parse(sessionData);
+            const now = Date.now();
+            
+            // Check if session has expired (30 minutes)
+            if (now - session.timestamp > SESSION_TIMEOUT) {
+                console.log("Session expired. Logging out...");
+                this.logout();
+                return null;
+            }
+            
+            return session;
         },
 
         isLoggedIn: function() {
@@ -44,8 +55,14 @@
         },
 
         checkAccess: function() {
-            if (!this.isLoggedIn() && !window.location.pathname.includes('login.html')) {
+            const isLoginPage = window.location.pathname.includes('login.html');
+            const session = this.getSession();
+
+            if (!session && !isLoginPage) {
                 window.location.href = 'login.html';
+            } else if (session && isLoginPage) {
+                // If already logged in and on login page, go to dashboard
+                window.location.href = 'index.html';
             }
         },
 
@@ -57,5 +74,10 @@
 
     // Auto-check on script load
     Auth.checkAccess();
+
+    // Check expiration every minute while on the page
+    setInterval(() => {
+        Auth.getSession();
+    }, 60000);
 
 })();
