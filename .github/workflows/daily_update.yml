@@ -24,6 +24,9 @@ jobs:
           pip install requests # Ensure requests is installed
 
       - name: Run Auto Update
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: python auto_update.py
 
       - name: Commit and push changes (optional)

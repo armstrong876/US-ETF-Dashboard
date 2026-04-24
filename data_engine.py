@@ -134,23 +134,24 @@ if BENCHMARK in close.columns:
 print(f"[{datetime.now():%H:%M:%S}] Calculating returns...")
 results = []
 
-for ticker in tickers:
-    if ticker not in close.columns:
-        print(f"  Skipping {ticker} — no data")
+for ticker in etf_meta:
+    ticker_sym = ticker["symbol"]
+    if ticker_sym not in close.columns:
+        print(f"  Skipping {ticker_sym} — no data")
         continue
 
-    series = close[ticker].dropna()
+    series = close[ticker_sym].dropna()
     if len(series) < 10:
-        print(f"  Skipping {ticker} — insufficient data ({len(series)} rows)")
+        print(f"  Skipping {ticker_sym} — insufficient data ({len(series)} rows)")
         continue
 
-    meta = tickers_meta.get(ticker, {})
-    yf_p = YF_PROFILES.get(ticker, {})
+    meta = tickers_meta.get(ticker_sym, {})
+    yf_p = YF_PROFILES.get(ticker_sym, {})
     
     # Merge strategy: Priority YF -> Fallback Excel
     row  = {
-        "symbol":      ticker,
-        "name":        yf_p.get("name") or meta.get("name", ticker),
+        "symbol":      ticker_sym,
+        "name":        yf_p.get("name") or meta.get("name", ticker_sym),
         "asset_class": meta.get("asset_class", ""),
         "category":    yf_p.get("category") or meta.get("category", ""),
         "aum":         yf_p.get("aum") or meta.get("aum", 0),

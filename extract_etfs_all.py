@@ -1,9 +1,16 @@
 import openpyxl
 import json
+import shutil
+import tempfile
+import os
 
-wb = openpyxl.load_workbook(
-    r'C:\Users\Armstrong Admin\OneDrive - ARMSTRONG CAPITAL AND FINANCIAL SERVICES PRIVATE LIMITED\Projects\US Whitelist\ETF Database.xlsx'
-)
+excel_path = r'C:\Users\Armstrong Admin\OneDrive - ARMSTRONG CAPITAL AND FINANCIAL SERVICES PRIVATE LIMITED\Projects\US Whitelist\ETF Database.xlsx'
+temp_dir = tempfile.gettempdir()
+temp_excel = os.path.join(temp_dir, 'temp_etf_db_all.xlsx')
+
+shutil.copy2(excel_path, temp_excel)
+
+wb = openpyxl.load_workbook(temp_excel)
 ws = wb['etfdb_screener']
 
 rows = list(ws.iter_rows(values_only=True))
@@ -50,11 +57,11 @@ for row in rows[2:]:
         'category':   str(row[10]) if row[10] else '',
         'er':         safe_float(row[12]),
         'price':      price,
-        'inception':  str(row[11]).split()[0] if row[11] else None, # e.g. 2010-09-07
+        'inception':  str(row[11])[:10] if row[11] else None,
         'pe':         safe_float(row[19]),
         'beta':       safe_float(row[20]),
         'holdings':   safe_float(row[22]),
-        'top10_pct':  safe_float(row[23])
+        'top10_pct':  safe_float(row[23]) * 100 if safe_float(row[23]) is not None else None
     })
 
 # Sort by AUM descending, keep ALL

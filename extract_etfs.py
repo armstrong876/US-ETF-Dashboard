@@ -1,9 +1,16 @@
 import openpyxl
 import json
+import shutil
+import tempfile
+import os
 
-wb = openpyxl.load_workbook(
-    r'C:\Users\Armstrong Admin\OneDrive - ARMSTRONG CAPITAL AND FINANCIAL SERVICES PRIVATE LIMITED\Projects\US Whitelist\ETF Database.xlsx'
-)
+excel_path = r'C:\Users\Armstrong Admin\OneDrive - ARMSTRONG CAPITAL AND FINANCIAL SERVICES PRIVATE LIMITED\Projects\US Whitelist\ETF Database.xlsx'
+temp_dir = tempfile.gettempdir()
+temp_excel = os.path.join(temp_dir, 'temp_etf_db.xlsx')
+
+shutil.copy2(excel_path, temp_excel)
+
+wb = openpyxl.load_workbook(temp_excel)
 ws = wb['etfdb_screener']
 
 rows = list(ws.iter_rows(values_only=True))
@@ -36,20 +43,57 @@ for row in rows[2:]:
     except:
         price = 0
 
+    def safe_float(val):
+        try:
+            return float(str(val).replace('%','').replace(',',''))
+        except:
+            return None
+
+    def safe_int(val):
+        try:
+            return int(str(val).replace(',',''))
+        except:
+            return None
+
     etfs.append({
         'symbol':     sym.strip(),
         'name':       str(row[1]) if row[1] else '',
         'asset_class': str(row[2]) if row[2] else '',
         'aum':        aum,
         'category':   str(row[10]) if row[10] else '',
+        'inception':  str(row[11])[:10] if row[11] else '',
         'er':         float(row[12]) if row[12] else 0,
+        'pe':         safe_float(row[19]),
+        'beta':       safe_float(row[20]),
+        'holdings':   safe_int(row[22]),
+        'top10_pct':  safe_float(row[23]) * 100 if safe_float(row[23]) is not None else None,
         'price':      price,
     })
 
-etfs_sorted = sorted(etfs, key=lambda x: x['aum'], reverse=True)[:100]
+TARGET_TICKERS = [
+    "QQQ", "XLP", "GLD", "XLY", "VOO", "SMH", "URA", "AIQ", "CIBR", "REMX", 
+    "BOTZ", "UFO", "SKYY", "PPA", "ESPO", "OZEM", "PJP", "SLV", "FNGS", "BBP", 
+    "SPY", "XLE", "XLF", "IWM", "EWZ", "FXI", "GDX", "IEFA", "IAU", "XLI", 
+    "VWO", "EWJ", "INDA", "IVV", "SOXX", "EWT", "ACWI", "IVW", "VGK", "MCHI", 
+    "IWD", "SIL", "SPMD", "IWF", "SPSM", "EWG", "EWU", "IHI", "EZU", "SDVY", 
+    "IBB", "DBC", "FTXO", "CQQQ", "SPTM", "IXC", "VFH", "PPLT", "NLR", "IWY", 
+    "IWO", "XMMO", "IWV", "FLBR", "XSMO", "XMHQ", "IEO", "BWET", "IVOO", "SMHX", 
+    "FAN", "AQWA", "PXJ", "DRIV", "IXG", "FPX", "IBBQ", "QMOM", "IBOT", "SMOG"
+]
 
-print(f'\nTotal non-inverse/non-leveraged ETFs: {len(etfs)}')
-print('\nTop 100 ETFs by AUM:')
+# Create a dictionary for quick lookup from the extracted data
+etf_dict = {e['symbol']: e for e in etfs}
+
+# Build the final sorted list based exactly on the TARGET_TICKERS array
+etfs_sorted = []
+for t in TARGET_TICKERS:
+    if t in etf_dict:
+        etfs_sorted.append(etf_dict[t])
+    else:
+        print(f"WARNING: Ticker {t} not found in database!")
+
+print(f'\nTotal non-inverse/non-leveraged ETFs in DB: {len(etfs)}')
+print(f'\nSelected {len(etfs_sorted)} ETFs from the target list:')
 for i, e in enumerate(etfs_sorted, 1):
     print(f"{i:3}. {e['symbol']:8}  AUM: {e['aum']:>20,.0f}  {e['name'][:50]}")
 

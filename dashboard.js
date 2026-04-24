@@ -16,43 +16,49 @@ let datasetMode = '100';
 const PERIODS_HEATMAP = ['1W','15D','1M','2M','3M','6M','9M','12M','2Y','3Y','5Y','7Y','10Y'];
 const PERIODS_REL     = ['1W','1M','3M','6M','12M','2Y','3Y','5Y'];
 
+const TOP_20_TICKERS = [
+  "QQQ", "XLP", "GLD", "XLY", "VOO", "SMH", "URA", "AIQ", "CIBR", "REMX", 
+  "BOTZ", "UFO", "SKYY", "PPA", "ESPO", "OZEM", "PJP", "SLV", "FNGS", "BBP"
+];
+
+let vhPeriod = '1W';
+
 // ── Bootstrap ────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   bindTabs();
-  loadData();
+  await loadData();
+  await handleInitialSync();
 });
 
 // ── Data Load ─────────────────────────────────────────────
 async function loadData() {
-  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  
-  if (isLocal) {
-    await syncData();
-  } else {
-    // If on Netlify, explain why Refresh doesn't trigger the local engine
-    showToast('Notice: Cloud Refresh is disabled. Please run the dashboard locally at http://localhost:5000 to trigger a sync.', 'error');
-    console.warn("Refresh button clicked on hosted site. Local server required for data sync.");
-  }
-
   await fetchAndRender();
 }
 
-async function syncData() {
+async function handleInitialSync() {
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (!isLocal) return;
+
+  // We only sync once on startup if the local dashboard data is old
+  await syncData(false); // force=false
+}
+
+async function syncData(force = false) {
   const overlay = document.getElementById('loadingOverlay');
   const loadTitle = overlay.querySelector('.load-title');
   const loadSub = overlay.querySelector('.load-sub');
 
   showLoading(true);
-  loadTitle.textContent = "Updating Dashboard";
-  loadSub.textContent = "Step 1: Running Data Engines (v1.2)...";
+  loadTitle.textContent = "Checking for Updates";
+  loadSub.textContent = "Connecting to local data engine...";
 
   try {
     const res = await fetch('/api/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        include_all: datasetMode === 'all',
-        force: true // Forced for now to ensure we see the result
+        include_all: true, // Always check both locally
+        force: force
       })
     });
     
@@ -81,11 +87,15 @@ async function syncData() {
     } else {
       throw new Error(data.message || "Unknown server error");
     }
+    
+    // Always reload UI data after a sync attempt
+    await loadData();
+    
   } catch (e) {
     console.error("Sync Error:", e);
     showToast('Refresh Failed: ' + e.message, 'error');
     showLoading(false);
-    throw e; // prevent fetchAndRender if we really failed
+    // Don't re-throw, just stop the overlay
   }
 }
 
@@ -175,6 +185,7 @@ function processData() {
   renderMarketBar();
   applyFilters();
   renderOverview();
+  renderVisualHeatmap();
   renderHeatmap();
   renderRankings();
   renderSignals();
@@ -227,6 +238,7 @@ function applyFilters() {
 
   renderMarketBar();
   renderOverview();
+  renderVisualHeatmap();
   renderHeatmap();
   renderRelative();
 }
@@ -344,8 +356,11 @@ function renderOverview() {
 }
 
 function buildOverviewRow(e, rank) {
+  const isTop20 = datasetMode === '100' && TOP_20_TICKERS.includes(e.symbol);
+  const hlClass = isTop20 ? 'top-20-highlight' : '';
+
   return `
-    <tr>
+    <tr class="${hlClass}">
       <td class="col-rank">${rank}</td>
       <td class="sticky-col col-ticker">
         <div class="ticker-box">
@@ -358,10 +373,9 @@ function buildOverviewRow(e, rank) {
       <td class="mono">${e.inception || '—'}</td>
       <td class="mono">${e.pe ? e.pe.toFixed(2) : '—'}</td>
       <td class="mono">${e.beta ? e.beta.toFixed(2) : '—'}</td>
-      <td class="mono">${e.alpha ? e.alpha.toFixed(2) : '—'}</td>
       <td class="mono">${e.holdings || '—'}</td>
       <td class="mono">${e.top10_pct ? e.top10_pct.toFixed(2) + '%' : '—'}</td>
-      <td class="mono">${fmtPct(e.er)}</td>
+      <td class="mono">${e.er != null ? e.er.toFixed(2) + '%' : '—'}</td>
     </tr>
   `;
 }
@@ -395,7 +409,10 @@ function buildHeatRow(e, rank) {
   const ms    = e.momentum_score;
   const scoreClass = ms == null ? '' : ms >= 15 ? 'score-high' : ms >= 5 ? 'score-mid' : 'score-low';
 
-  return `<tr>
+  const isTop20 = datasetMode === '100' && TOP_20_TICKERS.includes(e.symbol);
+  const hlClass = isTop20 ? 'top-20-highlight' : '';
+
+  return `<tr class="${hlClass}">
     <td class="col-rank sticky-col">${rank}</td>
     <td class="col-ticker sticky-col">${e.symbol}</td>
     <td class="col-name"  title="${esc(e.name)}">${esc(e.name)}</td>
@@ -427,10 +444,21 @@ function renderRankings() {
   const top10    = DATA.top10    || [];
   const bottom10 = DATA.bottom10 || [];
 
+  const header = `
+    <div class="rank-card header">
+      <span class="rank-num">#</span>
+      <span class="rank-sym">Ticker</span>
+      <span class="rank-name">ETF Name</span>
+      <span class="rank-score">Score</span>
+      <span class="rank-ret">3M Ret</span>
+      <span class="rank-ret">1Y Ret</span>
+      <span class="rank-sig">Signal</span>
+    </div>`;
+
   document.getElementById('top10Cards').innerHTML =
-    top10.map(r => buildRankCard(r, true)).join('');
+    header + top10.map(r => buildRankCard(r, true)).join('');
   document.getElementById('bottom10Cards').innerHTML =
-    bottom10.map(r => buildRankCard(r, false)).join('');
+    header + bottom10.map(r => buildRankCard(r, false)).join('');
 }
 
 function buildRankCard(r, isTop) {
@@ -440,8 +468,11 @@ function buildRankCard(r, isTop) {
   const r6m  = r.ret_6m  != null ? fmtPct(r.ret_6m)  : '—';
   const r12m = r.ret_12m != null ? fmtPct(r.ret_12m) : '—';
 
+  const isTop20 = datasetMode === '100' && TOP_20_TICKERS.includes(r.symbol);
+  const hlClass = isTop20 ? 'top-20-highlight' : '';
+
   return `
-  <div class="rank-card">
+  <div class="rank-card ${hlClass}">
     <span class="rank-num">${r.rank}</span>
     <span class="rank-sym">${r.symbol}</span>
     <span class="rank-name" title="${esc(r.name)}">${esc(r.name)}</span>
@@ -473,8 +504,11 @@ function buildSignalCard(e) {
   const r3m  = e.returns?.['3M'];
   const r12m = e.returns?.['12M'];
 
+  const isTop20 = datasetMode === '100' && TOP_20_TICKERS.includes(e.symbol);
+  const hlClass = isTop20 ? 'top-20-highlight' : '';
+
   return `
-  <div class="signal-card sig-${sig}">
+  <div class="signal-card sig-${sig} ${hlClass}">
     <div class="sig-top">
       <span class="sig-ticker">${e.symbol}</span>
       <span class="sig-emoji">${emoji}</span>
@@ -508,7 +542,10 @@ function buildRelRow(e, rank) {
     return `<td class="${heatClass(v)}">${fmtPct(v)}</td>`;
   }).join('');
 
-  return `<tr>
+  const isTop20 = datasetMode === '100' && TOP_20_TICKERS.includes(e.symbol);
+  const hlClass = isTop20 ? 'top-20-highlight' : '';
+
+  return `<tr class="${hlClass}">
     <td class="col-rank sticky-col">${rank}</td>
     <td class="col-ticker sticky-col">${e.symbol}</td>
     <td class="col-name" title="${esc(e.name)}">${esc(e.name)}</td>
@@ -530,6 +567,70 @@ function bindTabs() {
       activeTab = tab;
     });
   });
+
+  // Visual Heatmap controls
+  document.querySelectorAll('.vh-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.vh-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      vhPeriod = btn.dataset.period;
+      renderVisualHeatmap();
+    });
+  });
+}
+
+// ══════════════════════ VISUAL HEATMAP ══════════════════════
+function renderVisualHeatmap() {
+  const container = document.querySelector('.visual-heatmap-container');
+  if (!container) return;
+
+  if (datasetMode === 'all') {
+    container.style.display = 'none';
+    return;
+  }
+  
+  container.style.display = 'block';
+
+  if (!DATA || !DATA.etfs) return;
+  const grid = document.getElementById('visualHeatmapGrid');
+  if (!grid) return;
+
+  // Clone and sort by the selected period return
+  const sorted = [...DATA.etfs].sort((a, b) => {
+    let va, vb;
+    if (vhPeriod === 'momentum_score') {
+      va = a.momentum_score ?? -9999;
+      vb = b.momentum_score ?? -9999;
+    } else {
+      va = a.returns?.[vhPeriod] ?? -9999;
+      vb = b.returns?.[vhPeriod] ?? -9999;
+    }
+    return vb - va; // highest to lowest
+  });
+
+  grid.innerHTML = sorted.map(e => {
+    let val, disp;
+    if (vhPeriod === 'momentum_score') {
+      val = e.momentum_score;
+      disp = fmtScore(val);
+    } else {
+      val = e.returns?.[vhPeriod];
+      disp = fmtPct(val);
+    }
+    
+    const bgClass = heatClass(val);
+    
+    return `
+      <div class="heatmap-tile ${bgClass}">
+        <div class="vh-top">
+          <span class="vh-ticker">${e.symbol}</span>
+          <span class="vh-ret">${disp}</span>
+        </div>
+        <div class="vh-sector" title="${esc(e.category)}">${esc(e.category || 'Unknown')}</div>
+        <div class="vh-name" title="${esc(e.name)}">${esc(e.name || '')}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 function switchDataset(mode) {

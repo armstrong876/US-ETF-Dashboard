@@ -1,5 +1,5 @@
 /**
- * auth.js | Authentication & Authorization for Armstrong Capital Dashboard
+ * auth.js | v1.0.1 | Authentication & Authorization for Armstrong Capital Dashboard
  */
 
 (function() {

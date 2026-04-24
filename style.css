@@ -381,8 +381,8 @@ td.score-col.score-low  { color: var(--red); }
 /* ══════════════════════ RANKINGS TAB ══════════════════════ */
 .rankings-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  grid-template-columns: 1fr 1fr 340px;
+  gap: 20px;
 }
 .rankings-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
 .rankings-header {
@@ -409,12 +409,69 @@ td.score-col.score-low  { color: var(--red); }
   transition: all .2s;
 }
 .rank-card:hover { border-color: var(--border-bright); transform: translateX(3px); }
+.rank-card.header {
+  background: var(--bg-surface);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 14px;
+  border-radius: 0;
+  margin-bottom: 4px;
+}
+.rank-card.header:hover { transform: none; border-color: var(--border); }
+.rank-card.header span {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
 .rank-num  { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); text-align: center; }
 .rank-sym  { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--accent); }
 .rank-name { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rank-score{ font-family: var(--font-mono); font-size: 13px; font-weight: 700; }
 .rank-ret  { font-family: var(--font-mono); font-size: 11px; text-align: right; }
 .rank-sig  { font-size: 11px; }
+
+/* Methodology Styling */
+.methodology-content {
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.method-list {
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+}
+.method-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.method-list li strong {
+  color: var(--text-primary);
+}
+.formula-box {
+  background: var(--bg-surface);
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin: 20px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  text-align: center;
+}
+.method-note {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+.rankings-section.methodology {
+  background: linear-gradient(180deg, var(--bg-card), rgba(99,102,241,0.03));
+}
 
 /* ══════════════════════ SIGNALS TAB ═══════════════════════ */
 .signals-grid {
@@ -447,6 +504,48 @@ td.score-col.score-low  { color: var(--red); }
 .sig-micro  { font-size: 10px; font-family: var(--font-mono); background: var(--bg-surface); padding: 2px 6px; border-radius: 4px; color: var(--text-muted); }
 .sig-micro.pos { color: var(--green); }
 .sig-micro.neg { color: var(--red); }
+
+/* ══════════════ MOBILE RESPONSIVENESS ══════════════ */
+@media (max-width: 768px) {
+  .header-inner { padding: 10px 15px; }
+  .brand-name { font-size: 14px; }
+  
+  .stats-bar {
+    grid-template-columns: repeat(2, 1fr);
+    padding: 0 15px;
+  }
+  
+  .market-bar {
+    grid-template-columns: 1fr;
+    padding: 0 15px 20px;
+  }
+  
+  .main-content { padding: 0 15px 30px; }
+  
+  .rankings-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  
+  .vh-controls {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    gap: 8px;
+  }
+  .vh-btn { white-space: nowrap; }
+  
+  .heatmap-table { font-size: 10px; }
+  .heatmap-table th, .heatmap-table td { padding: 6px 4px; }
+  
+  .col-name, .col-cat { display: none; } /* Hide names on mobile to save space */
+  
+  .rank-card {
+    grid-template-columns: 30px 50px 1fr auto;
+    gap: 5px;
+  }
+  .rank-name { display: none; }
+}
 
 /* ══════════════ LOADING & ERROR OVERLAYS ══════════════════ */
 .loading-overlay {
@@ -660,4 +759,131 @@ td.score-col.score-low  { color: var(--red); }
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
+}
+
+/* ══════════════ VISUAL HEATMAP & HIGHLIGHTS ══════════════ */
+.top-20-highlight {
+  background: rgba(99, 102, 241, 0.15) !important;
+}
+
+.visual-heatmap-container {
+  margin-top: 40px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+}
+
+.vh-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vh-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.vh-controls {
+  display: flex;
+  gap: 8px;
+  background: var(--bg-elevated);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.vh-btn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.vh-btn.active {
+  background: var(--accent);
+  color: white;
+  box-shadow: var(--shadow-glow);
+}
+
+.vh-btn:hover:not(.active) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.heatmap-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 10px;
+  border-radius: 6px;
+  height: 90px;
+  color: #fff;
+  transition: transform 0.2s, box-shadow 0.2s;
+  cursor: default;
+  border: 1px solid rgba(255,255,255,0.05);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.heatmap-tile:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.4);
+  z-index: 2;
+}
+
+.vh-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.vh-ticker {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.vh-ret {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.vh-sector {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.8;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vh-name {
+  font-size: 10px;
+  opacity: 0.9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: auto;
 }

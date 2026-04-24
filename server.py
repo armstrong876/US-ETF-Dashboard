@@ -10,8 +10,8 @@ from flask import Flask, send_from_directory, jsonify, request
 app = Flask(__name__, static_folder='.')
 
 # --- Configuration ---
-NETLIFY_TOKEN = "nfp_u43aQtKW4Z4aYL4kapzybDueTRsKUuof0aa3"
-NETLIFY_SITE_ID = "b7f53b7f-3e4b-402f-9783-a3f0f96cfbe8"
+NETLIFY_TOKEN = os.environ.get("NETLIFY_AUTH_TOKEN", "nfp_8f2UiPxVQUbcTNbxGU8GqdbAVDLf2jnd6936")
+NETLIFY_SITE_ID = os.environ.get("NETLIFY_SITE_ID", "1efbdd84-2440-4715-aa74-52baf24c3b8f")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DASHBOARD_JSON = os.path.join(BASE_DIR, "dashboard.json")

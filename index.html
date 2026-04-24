@@ -44,7 +44,7 @@
         <span id="updateText">Loading…</span>
       </div>
       <div class="meta-pill" id="asOfDate">As of: —</div>
-      <button class="refresh-btn" id="refreshBtn" onclick="loadData()">
+      <button class="refresh-btn" id="refreshBtn" onclick="syncData(true)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         Refresh
       </button>
@@ -147,7 +147,6 @@
             <th onclick="setSortCol('inception')">Inception</th>
             <th onclick="setSortCol('pe')">P/E Ratio</th>
             <th onclick="setSortCol('beta')">Beta</th>
-            <th onclick="setSortCol('alpha')">Alpha</th>
             <th onclick="setSortCol('holdings')">Holdings</th>
             <th onclick="setSortCol('top10_pct')">Top 10 %</th>
             <th onclick="setSortCol('er')">Exp. Ratio</th>
@@ -155,6 +154,21 @@
         </thead>
         <tbody id="overviewBody"></tbody>
       </table>
+    </div>
+
+    <!-- Visual Heatmap Grid placed directly after the overview table -->
+    <div class="visual-heatmap-container">
+      <div class="vh-header">
+        <h3>Universe Return Heatmap</h3>
+        <div class="vh-controls">
+          <button class="vh-btn" data-period="momentum_score">Momentum Score</button>
+          <button class="vh-btn active" data-period="1W">1 Week</button>
+          <button class="vh-btn" data-period="1M">1 Month</button>
+          <button class="vh-btn" data-period="3M">3 Months</button>
+          <button class="vh-btn" data-period="12M">1 Year</button>
+        </div>
+      </div>
+      <div class="heatmap-grid" id="visualHeatmapGrid"></div>
     </div>
   </div>
 
@@ -218,6 +232,29 @@
           </div>
         </div>
         <div class="rankings-cards" id="bottom10Cards"></div>
+      </div>
+
+      <div class="rankings-section methodology">
+        <div class="rankings-header">
+          <span class="rank-icon">🧪</span>
+          <div>
+            <h2>Calculation Methodology</h2>
+            <p>How we calculate Momentum</p>
+          </div>
+        </div>
+        <div class="methodology-content">
+          <p>The Momentum Score is a composite value calculated using weighted trailing returns:</p>
+          <ul class="method-list">
+            <li><strong>1 Month Return:</strong> 20% weight</li>
+            <li><strong>3 Month Return:</strong> 30% weight</li>
+            <li><strong>6 Month Return:</strong> 30% weight</li>
+            <li><strong>12 Month Return:</strong> 20% weight</li>
+          </ul>
+          <div class="formula-box">
+            Score = (1M × 0.2) + (3M × 0.3) + (6M × 0.3) + (12M × 0.2)
+          </div>
+          <p class="method-note">This ensures we capture both short-term performance and long-term established trends while giving higher importance to the 3-6 month window.</p>
+        </div>
       </div>
 
     </div>
