@@ -33,7 +33,7 @@ def deploy_to_netlify():
     include_files = [
         'index.html', 'dashboard.js', 'style.css', 'auth.js',
         'dashboard.json', 'dashboard_all.json', 'login.html',
-        'netlify.toml', 'armstrong_vibrant_hero.png'
+        'netlify.toml', 'armstrong_vibrant_hero.png', 'armstrong_logo.jpg'
     ]
     
     # Create in-memory zip
@@ -80,17 +80,7 @@ def refresh():
     force = data.get('force', False)
     include_all = data.get('include_all', False)
     
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    last_date = get_last_updated_date()
-    
     print(f"[{datetime.now():%H:%M:%S}] Refresh request: Force={force}, IncludeAll={include_all}")
-    
-    if last_date == current_date and not force:
-        print(f"  Already up to date ({last_date}). skipping.")
-        return jsonify({
-            "status": "up_to_date",
-            "message": f"Data is already up to date for today ({current_date})."
-        })
 
     try:
         # 1. Run Data Engine

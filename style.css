@@ -582,7 +582,7 @@ td.score-col.score-low  { color: var(--red); }
 /* ══════════════ MARKET BAR ══════════════ */
 .market-bar {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
   padding: 0 40px 25px;
   margin-top: 32px;

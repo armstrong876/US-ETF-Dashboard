@@ -1,34 +1,38 @@
 import os
 import subprocess
-from datetime import datetime
 import sys
+from datetime import datetime
 
-# Change working directory to the script's directory to ensure paths work
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+# Change working directory to script location
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
 
+# Import Netlify deploy functionality from server
 from server import deploy_to_netlify
 
 def run_update():
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Starting scheduled auto-update...")
     try:
-        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Running data_engine.py...")
+        # 1. Run standard data engine
+        print(f"[{datetime.now():%H:%M:%S}] Running data_engine.py...")
         subprocess.run([sys.executable, "data_engine.py"], check=True)
         
-        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Running data_engine_all.py...")
+        # 2. Run large data engine (all ETFs)
+        print(f"[{datetime.now():%H:%M:%S}] Running data_engine_all.py...")
         subprocess.run([sys.executable, "data_engine_all.py"], check=True)
         
-        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Refresh successful. Now pushing to Cloud...")
+        # 3. Deploy to Netlify
+        print(f"[{datetime.now():%H:%M:%S}] Deploying updated data to Netlify...")
         success, cloud_msg = deploy_to_netlify()
-        
         if success:
-            print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Auto-update and deployment completed successfully.")
+            print(f"[{datetime.now():%H:%M:%S}] Cloud deployment succeeded: {cloud_msg}")
         else:
-            print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Auto-update local successful, but cloud deployment failed: {cloud_msg}")
-
-    except subprocess.CalledProcessError as e:
-        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] ERROR: subprocess failed: {e}")
+            print(f"[{datetime.now():%H:%M:%S}] Cloud deployment FAILED: {cloud_msg}")
+            sys.exit(1)
+            
     except Exception as e:
-        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] CRITICAL ERROR: {e}")
+        print(f"[{datetime.now():%H:%M:%S}] Error running update: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     run_update()

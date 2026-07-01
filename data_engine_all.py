@@ -17,6 +17,8 @@ BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 ETF_LIST   = os.path.join(BASE_DIR, "etf_list_all.json")
 OUTPUT     = os.path.join(BASE_DIR, "dashboard_all.json")
 BENCHMARK  = "SPY"
+CACHE_RAW  = os.path.join(BASE_DIR, "cache_raw_all.pkl")
+CACHE_ADJ  = os.path.join(BASE_DIR, "cache_adj_all.pkl")
 
 PERIODS = {
     "1W":  5, "15D": 15, "1M":  21, "2M":  42, "3M":  63,
@@ -34,7 +36,9 @@ MARKET_INDICES = {
     "^RUT": "Russell 2000 Index",
     "000001.SS": "SSE Composite",
     "^NSEI": "Nifty 50",
-    "^CNX500": "Nifty 500"
+    "^CRSLDX": "Nifty 500",
+    "^VIX": "VIX",
+    "^BSESN": "Sensex"
 }
 
 with open(ETF_LIST) as f:
@@ -64,49 +68,138 @@ if BENCHMARK not in tickers:
 print(f"[{datetime.now():%H:%M:%S}] Fetching price data for {len(tickers)} ETFs in batches...")
 print("This may take 5-15 minutes for 4500+ ETFs. Please wait...\n")
 
-# Batch download ~4500 ETFs safely
-batch_size = 250
-all_closes = []
-
-for i in range(0, len(tickers), batch_size):
-    batch = tickers[i:i+batch_size]
-    print(f"[{datetime.now():%H:%M:%S}]   Fetching batch {i//batch_size + 1}/{(len(tickers)-1)//batch_size + 1} ({len(batch)} symbols)...")
+# ── Batch Download Helper Function ──────────────────────────────────────────
+def download_in_batches(tickers_to_download, download_kwargs):
+    batch_size = 250
+    all_raw_list = []
+    all_adj_list = []
     
-    try:
-        raw = yf.download(
-            batch,
-            period="max",
-            interval="1d",
-            auto_adjust=True,
-            progress=False,
-            threads=True,
-            ignore_tz=True
-        )
-        if isinstance(raw.columns, pd.MultiIndex):
-            close = raw["Close"]
-        else:
-            close = raw[["Close"]]
-            close.columns = batch
+    for i in range(0, len(tickers_to_download), batch_size):
+        batch = tickers_to_download[i:i+batch_size]
+        print(f"[{datetime.now():%H:%M:%S}]   Fetching batch {i//batch_size + 1}/{(len(tickers_to_download)-1)//batch_size + 1} ({len(batch)} symbols)...")
+        
+        try:
+            raw = yf.download(
+                batch,
+                progress=False,
+                threads=True,
+                ignore_tz=True,
+                **download_kwargs
+            )
+            if isinstance(raw.columns, pd.MultiIndex):
+                cr = raw["Close"]
+                ca = raw.get("Adj Close", raw["Close"])
+            else:
+                cr = raw[["Close"]]
+                cr.columns = batch
+                ca = raw.get("Adj Close", cr)
             
-        all_closes.append(close)
+            all_raw_list.append(cr)
+            all_adj_list.append(ca)
+        except Exception as e:
+            print(f"  Error on batch {i}: {e}")
+        time.sleep(1)
+    
+    df_raw = pd.concat(all_raw_list, axis=1) if all_raw_list else pd.DataFrame()
+    df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
+    if not df_raw.empty:
+        df_raw = df_raw.dropna(how="all")
+        df_raw.index = pd.to_datetime(df_raw.index)
+        
+    df_adj = pd.concat(all_adj_list, axis=1) if all_adj_list else pd.DataFrame()
+    df_adj = df_adj.loc[:, ~df_adj.columns.duplicated()]
+    if not df_adj.empty:
+        df_adj = df_adj.dropna(how="all")
+        df_adj.index = pd.to_datetime(df_adj.index)
+        
+    return df_raw, df_adj
+
+# ── Load or Create Cache ──────────────────────────────────────────────────────
+close_raw = pd.DataFrame()
+close_adj = pd.DataFrame()
+
+cache_loaded = False
+if os.path.exists(CACHE_RAW) and os.path.exists(CACHE_ADJ):
+    try:
+        close_raw = pd.read_pickle(CACHE_RAW)
+        close_adj = pd.read_pickle(CACHE_ADJ)
+        if not close_raw.empty and not close_adj.empty:
+            cache_loaded = True
+            print(f"[{datetime.now():%H:%M:%S}] Cache loaded successfully. Last date in cache: {close_raw.index[-1].date()}")
     except Exception as e:
-        print(f"  Error on batch {i}: {e}")
-    time.sleep(1) # slight pause between batches
+        print(f"[{datetime.now():%H:%M:%S}] Cache read error, starting fresh: {e}")
 
-close = pd.concat(all_closes, axis=1) if all_closes else pd.DataFrame()
-# Remove duplicated columns if benchmark was accidentally repeated in batches
-close = close.loc[:, ~close.columns.duplicated()]
+# ── Self-healing: Fetch full history for newly added tickers ──────────────────
+if cache_loaded:
+    missing = [t for t in tickers if t not in close_raw.columns or t not in close_adj.columns]
+    if missing:
+        print(f"[{datetime.now():%H:%M:%S}] Found {len(missing)} missing tickers in cache. Fetching 11-year history...")
+        try:
+            close_raw_missing, close_adj_missing = download_in_batches(
+                missing, 
+                {"period": "11y", "interval": "1d", "auto_adjust": False}
+            )
+            # Concat columns
+            close_raw = pd.concat([close_raw, close_raw_missing], axis=1)
+            close_adj = pd.concat([close_adj, close_adj_missing], axis=1)
+            print(f"[{datetime.now():%H:%M:%S}] Missing tickers merged successfully.")
+        except Exception as e:
+            print(f"[{datetime.now():%H:%M:%S}] Error fetching missing tickers: {e}")
 
-close = close.dropna(how="all")
-close.index = pd.to_datetime(close.index)
+# ── Download fresh data ───────────────────────────────────────────────────────
+if cache_loaded:
+    # Warm start: Only download increment since the last cached date
+    last_date = close_raw.index[-1]
+    start_date = last_date.strftime("%Y-%m-%d")
+    print(f"[{datetime.now():%H:%M:%S}] Fetching incremental update since {start_date} in batches...")
+    
+    close_raw_new, close_adj_new = download_in_batches(
+        tickers,
+        {"start": start_date, "interval": "1d", "auto_adjust": False}
+    )
 
-print(f"\n[{datetime.now():%H:%M:%S}] Price data loaded. Rows: {len(close)}, Cols: {len(close.columns)}")
+    # Concat rows
+    close_raw = pd.concat([close_raw, close_raw_new])
+    close_adj = pd.concat([close_adj, close_adj_new])
+    
+    # Clean up index duplicates (keeping the latest downloaded data)
+    close_raw = close_raw.loc[~close_raw.index.duplicated(keep='last')].sort_index()
+    close_adj = close_adj.loc[~close_adj.index.duplicated(keep='last')].sort_index()
+else:
+    # Cold start: Full 11-year download
+    print(f"[{datetime.now():%H:%M:%S}] Fetching full 11-year history from Yahoo Finance in batches...")
+    close_raw, close_adj = download_in_batches(
+        tickers,
+        {"period": "11y", "interval": "1d", "auto_adjust": False}
+    )
 
-def pct_return(series, n_days):
-    if len(series) <= n_days:
+# ── Bound Cache & Save ────────────────────────────────────────────────────────
+# Limit history to the last 11 years to prevent memory leaks/unbounded growth
+eleven_years_ago = datetime.now() - pd.DateOffset(years=11)
+if not close_raw.empty:
+    close_raw = close_raw.loc[close_raw.index >= eleven_years_ago]
+if not close_adj.empty:
+    close_adj = close_adj.loc[close_adj.index >= eleven_years_ago]
+
+try:
+    close_raw.to_pickle(CACHE_RAW)
+    close_adj.to_pickle(CACHE_ADJ)
+    print(f"[{datetime.now():%H:%M:%S}] Caches updated and saved to disk.")
+except Exception as e:
+    print(f"[{datetime.now():%H:%M:%S}] Cache write error: {e}")
+
+print(f"\n[{datetime.now():%H:%M:%S}] Price data loaded. Rows: {len(close_raw)}, Cols: {len(close_raw.columns)}")
+
+def pct_return(series, n_days, calendar_index):
+    """Return absolute % for <1Y, and Annualized (CAGR) % for >=1Y using date-based lookup."""
+    if len(series) < 5 or len(calendar_index) <= n_days:
         return None
     current = series.iloc[-1]
-    past    = series.iloc[-(n_days + 1)]
+    target_date = calendar_index[-(n_days + 1)]
+    
+    # Find the price at or before target_date (fallback: target_date-1, target_date-2, etc.)
+    past = series.asof(target_date)
+    
     if pd.isna(current) or pd.isna(past) or past == 0:
         return None
     
@@ -116,20 +209,21 @@ def pct_return(series, n_days):
         return round((current / past - 1) * 100, 2)
 
 spy_returns = {}
-if BENCHMARK in close.columns:
-    spy_series = close[BENCHMARK].dropna()
+if BENCHMARK in close_adj.columns:
+    spy_series = close_adj[BENCHMARK].dropna()
     for label, days in PERIODS.items():
-        spy_returns[label] = pct_return(spy_series, days)
+        spy_returns[label] = pct_return(spy_series, days, close_adj.index)
 
 print(f"[{datetime.now():%H:%M:%S}] Calculating returns...")
 results = []
 
 for ticker in tickers:
-    if ticker not in close.columns:
+    if ticker not in close_raw.columns or ticker not in close_adj.columns:
         continue
 
-    series = close[ticker].dropna()
-    if len(series) < 10:
+    series_raw = close_raw[ticker].dropna()
+    series_adj = close_adj[ticker].dropna()
+    if len(series_raw) < 10 or len(series_adj) < 10:
         continue
 
     meta = tickers_meta.get(ticker, {})
@@ -142,7 +236,7 @@ for ticker in tickers:
         "category":    yf_p.get("category") or meta.get("category", ""),
         "aum":         yf_p.get("aum") or meta.get("aum", 0),
         "er":          yf_p.get("expense_ratio") or meta.get("er", 0),
-        "price":       round(float(series.iloc[-1]), 2),
+        "price":       round(float(series_raw.iloc[-1]), 2), # Use unadjusted Close for displayed quote price
         
         # New Overview Fields
         "inception":   yf_p.get("inception") or meta.get("inception"),
@@ -158,7 +252,7 @@ for ticker in tickers:
     }
 
     for label, days in PERIODS.items():
-        val = pct_return(series, days)
+        val = pct_return(series_adj, days, close_adj.index) # Use Adj Close for return calculations
         row["returns"][label] = val
 
     score = 0.0
@@ -212,16 +306,20 @@ bottom10 = [
 # ── Calculate Market Indices Stats ────────────────────────────────────
 index_stats = []
 for sym, name in MARKET_INDICES.items():
-    if sym in close.columns:
-        s = close[sym].dropna()
+    if sym in close_raw.columns:
+        s = close_raw[sym].dropna()
         if len(s) >= 2:
             price = round(float(s.iloc[-1]), 2)
             chg_1d = round((s.iloc[-1] / s.iloc[-2] - 1) * 100, 2)
             # Trading Day Lookbacks: 3M=63, 6M=126, 1Y=252
+            # Since global index calendars differ, we map lookbacks to calendar index dates (US benchmark index)
             def get_ret(n):
-                if len(s) > n:
-                    past = s.iloc[-(n+1)]
-                    return round((s.iloc[-1] / past - 1) * 100, 2) if past != 0 else 0
+                if len(close_adj.index) > n:
+                    target_date = close_adj.index[-(n + 1)]
+                    past = s.asof(target_date)
+                    if pd.isna(past) or past == 0:
+                        return 0
+                    return round((s.iloc[-1] / past - 1) * 100, 2)
                 return 0
 
             index_stats.append({
@@ -236,7 +334,7 @@ for sym, name in MARKET_INDICES.items():
 
 output = {
     "last_updated":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    "as_of_date":    str(close.index[-1].date()),
+    "as_of_date":    str(close_raw.index[-1].date()),
     "total_etfs":    len(results),
     "benchmark":     BENCHMARK,
     "spy_returns":   spy_returns,

@@ -57,7 +57,7 @@ async function syncData(force = false) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        include_all: true, // Always check both locally
+        include_all: datasetMode === 'all', 
         force: force
       })
     });

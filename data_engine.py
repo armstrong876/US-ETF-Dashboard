@@ -19,6 +19,8 @@ BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 ETF_LIST   = os.path.join(BASE_DIR, "etf_list.json")
 OUTPUT     = os.path.join(BASE_DIR, "dashboard.json")
 BENCHMARK  = "SPY"
+CACHE_RAW  = os.path.join(BASE_DIR, "cache_raw.pkl")
+CACHE_ADJ  = os.path.join(BASE_DIR, "cache_adj.pkl")
 
 PERIODS = {            # label : trading-day lookback
     "1W":  5,
@@ -46,7 +48,9 @@ MARKET_INDICES = {
     "^RUT": "Russell 2000 Index",
     "000001.SS": "SSE Composite",
     "^NSEI": "Nifty 50",
-    "^CNX500": "Nifty 500"
+    "^CRSLDX": "Nifty 500",
+    "^VIX": "VIX",
+    "^BSESN": "Sensex"
 }
 
 # ── Load Metadata & Profiles ────────────────────────────────────────────────
@@ -78,55 +82,156 @@ if BENCHMARK not in tickers:
 print(f"[{datetime.now():%H:%M:%S}] Fetching price data for {len(tickers)} ETFs...")
 print("This may take 1-3 minutes on first run.\n")
 
-# ── Download all prices in one batch call ──────────────────────────────────────
-raw = yf.download(
-    tickers,
-    period="max",
-    interval="1d",
-    auto_adjust=True,
-    progress=True,
-    threads=True,
-)
+# ── Load or Create Cache ──────────────────────────────────────────────────────
+close_raw = pd.DataFrame()
+close_adj = pd.DataFrame()
 
-# Extract Close prices only
-if isinstance(raw.columns, pd.MultiIndex):
-    close = raw["Close"]
+cache_loaded = False
+if os.path.exists(CACHE_RAW) and os.path.exists(CACHE_ADJ):
+    try:
+        close_raw = pd.read_pickle(CACHE_RAW)
+        close_adj = pd.read_pickle(CACHE_ADJ)
+        if not close_raw.empty and not close_adj.empty:
+            cache_loaded = True
+            print(f"[{datetime.now():%H:%M:%S}] Cache loaded successfully. Last date in cache: {close_raw.index[-1].date()}")
+    except Exception as e:
+        print(f"[{datetime.now():%H:%M:%S}] Cache read error, starting fresh: {e}")
+
+# ── Self-healing: Fetch full history for newly added tickers ──────────────────
+if cache_loaded:
+    missing = [t for t in tickers if t not in close_raw.columns or t not in close_adj.columns]
+    if missing:
+        print(f"[{datetime.now():%H:%M:%S}] Found {len(missing)} missing tickers in cache. Fetching 11-year history...")
+        try:
+            raw_missing = yf.download(
+                missing,
+                period="11y",
+                interval="1d",
+                auto_adjust=False,
+                progress=False,
+                threads=True
+            )
+            if isinstance(raw_missing.columns, pd.MultiIndex):
+                close_raw_missing = raw_missing["Close"]
+                close_adj_missing = raw_missing.get("Adj Close", raw_missing["Close"])
+            else:
+                close_raw_missing = raw_missing[["Close"]]
+                close_raw_missing.columns = missing
+                close_adj_missing = raw_missing.get("Adj Close", close_raw_missing)
+
+            close_raw_missing = close_raw_missing.dropna(how="all")
+            close_raw_missing.index = pd.to_datetime(close_raw_missing.index)
+            close_adj_missing = close_adj_missing.dropna(how="all")
+            close_adj_missing.index = pd.to_datetime(close_adj_missing.index)
+
+            # Concat columns
+            close_raw = pd.concat([close_raw, close_raw_missing], axis=1)
+            close_adj = pd.concat([close_adj, close_adj_missing], axis=1)
+            print(f"[{datetime.now():%H:%M:%S}] Missing tickers merged successfully.")
+        except Exception as e:
+            print(f"[{datetime.now():%H:%M:%S}] Error fetching missing tickers: {e}")
+
+# ── Download fresh data ───────────────────────────────────────────────────────
+if cache_loaded:
+    # Warm start: Only download increment since the last cached date
+    last_date = close_raw.index[-1]
+    start_date = last_date.strftime("%Y-%m-%d")
+    print(f"[{datetime.now():%H:%M:%S}] Fetching incremental update since {start_date}...")
+    
+    raw_new = yf.download(
+        tickers,
+        start=start_date,
+        interval="1d",
+        auto_adjust=False,
+        progress=False,
+        threads=True,
+    )
+    
+    if isinstance(raw_new.columns, pd.MultiIndex):
+        close_raw_new = raw_new["Close"]
+        close_adj_new = raw_new.get("Adj Close", raw_new["Close"])
+    else:
+        close_raw_new = raw_new[["Close"]]
+        close_raw_new.columns = tickers
+        close_adj_new = raw_new.get("Adj Close", close_raw_new)
+
+      # Concat rows
+    close_raw = pd.concat([close_raw, close_raw_new])
+    close_adj = pd.concat([close_adj, close_adj_new])
+    
+    # Clean up index duplicates (keeping the latest downloaded data)
+    close_raw = close_raw.loc[~close_raw.index.duplicated(keep='last')].sort_index()
+    close_adj = close_adj.loc[~close_adj.index.duplicated(keep='last')].sort_index()
 else:
-    close = raw[["Close"]]
-    close.columns = tickers
+    # Cold start: Full 11-year download
+    print(f"[{datetime.now():%H:%M:%S}] Fetching full 11-year history from Yahoo Finance...")
+    raw = yf.download(
+        tickers,
+        period="11y",
+        interval="1d",
+        auto_adjust=False,
+        progress=True,
+        threads=True,
+    )
+    
+    if isinstance(raw.columns, pd.MultiIndex):
+        close_raw = raw["Close"]
+        close_adj = raw.get("Adj Close", raw["Close"])
+    else:
+        close_raw = raw[["Close"]]
+        close_raw.columns = tickers
+        close_adj = raw.get("Adj Close", close_raw)
 
-close = close.dropna(how="all")
-close.index = pd.to_datetime(close.index)
+    close_raw = close_raw.dropna(how="all")
+    close_raw.index = pd.to_datetime(close_raw.index)
 
-print(f"\n[{datetime.now():%H:%M:%S}] Price data loaded. Rows: {len(close)}, Cols: {len(close.columns)}")
+    close_adj = close_adj.dropna(how="all")
+    close_adj.index = pd.to_datetime(close_adj.index)
+
+# ── Bound Cache & Save ────────────────────────────────────────────────────────
+# Limit history to the last 11 years to prevent memory leaks/unbounded growth
+eleven_years_ago = datetime.now() - pd.DateOffset(years=11)
+close_raw = close_raw.loc[close_raw.index >= eleven_years_ago]
+close_adj = close_adj.loc[close_adj.index >= eleven_years_ago]
+
+try:
+    close_raw.to_pickle(CACHE_RAW)
+    close_adj.to_pickle(CACHE_ADJ)
+    print(f"[{datetime.now():%H:%M:%S}] Caches updated and saved to disk.")
+except Exception as e:
+    print(f"[{datetime.now():%H:%M:%S}] Cache write error: {e}")
+
+print(f"\n[{datetime.now():%H:%M:%S}] Price data loaded. Rows: {len(close_raw)}, Cols: {len(close_raw.columns)}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: safe percentage return
 # ─────────────────────────────────────────────────────────────────────────────
-def pct_return(series, n_days):
-    """Return absolute % for <1Y, and Annualized (CAGR) % for >=1Y."""
-    if len(series) <= n_days:
+def pct_return(series, n_days, calendar_index):
+    """Return absolute % for <1Y, and Annualized (CAGR) % for >=1Y using date-based lookup."""
+    if len(series) < 5 or len(calendar_index) <= n_days:
         return None
     current = series.iloc[-1]
-    past    = series.iloc[-(n_days + 1)]
+    target_date = calendar_index[-(n_days + 1)]
+    
+    # Find the price at or before target_date (fallback: target_date-1, target_date-2, etc.)
+    past = series.asof(target_date)
+    
     if pd.isna(current) or pd.isna(past) or past == 0:
         return None
     
     if n_days >= 252:
-        # Annualized return (CAGR)
         return round(((current / past) ** (252.0 / n_days) - 1) * 100, 2)
     else:
-        # Absolute return
         return round((current / past - 1) * 100, 2)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Calculate SPY returns (benchmark)
 # ─────────────────────────────────────────────────────────────────────────────
 spy_returns = {}
-if BENCHMARK in close.columns:
-    spy_series = close[BENCHMARK].dropna()
+if BENCHMARK in close_adj.columns:
+    spy_series = close_adj[BENCHMARK].dropna()
     for label, days in PERIODS.items():
-        spy_returns[label] = pct_return(spy_series, days)
+        spy_returns[label] = pct_return(spy_series, days, close_adj.index)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Calculate returns for every ETF
@@ -136,13 +241,14 @@ results = []
 
 for ticker in etf_meta:
     ticker_sym = ticker["symbol"]
-    if ticker_sym not in close.columns:
+    if ticker_sym not in close_raw.columns or ticker_sym not in close_adj.columns:
         print(f"  Skipping {ticker_sym} — no data")
         continue
 
-    series = close[ticker_sym].dropna()
-    if len(series) < 10:
-        print(f"  Skipping {ticker_sym} — insufficient data ({len(series)} rows)")
+    series_raw = close_raw[ticker_sym].dropna()
+    series_adj = close_adj[ticker_sym].dropna()
+    if len(series_raw) < 10 or len(series_adj) < 10:
+        print(f"  Skipping {ticker_sym} — insufficient data ({len(series_raw)} rows)")
         continue
 
     meta = tickers_meta.get(ticker_sym, {})
@@ -156,7 +262,7 @@ for ticker in etf_meta:
         "category":    yf_p.get("category") or meta.get("category", ""),
         "aum":         yf_p.get("aum") or meta.get("aum", 0),
         "er":          yf_p.get("expense_ratio") or meta.get("er", 0),
-        "price":       round(float(series.iloc[-1]), 2),
+        "price":       round(float(series_raw.iloc[-1]), 2), # Use unadjusted Close for the displayed quote price
         
         # New Overview Fields
         "inception":   yf_p.get("inception") or meta.get("inception"),
@@ -173,7 +279,7 @@ for ticker in etf_meta:
 
     # ── Multi-timeframe returns ────────────────────────────────────────────
     for label, days in PERIODS.items():
-        val = pct_return(series, days)
+        val = pct_return(series_adj, days, close_adj.index) # Use Adj Close for performance/return metrics
         row["returns"][label] = val
 
     # ── Momentum score ─────────────────────────────────────────────────────
@@ -236,16 +342,20 @@ bottom10 = [
 # ── Calculate Market Indices Stats ────────────────────────────────────
 index_stats = []
 for sym, name in MARKET_INDICES.items():
-    if sym in close.columns:
-        s = close[sym].dropna()
+    if sym in close_raw.columns:
+        s = close_raw[sym].dropna()
         if len(s) >= 2:
             price = round(float(s.iloc[-1]), 2)
             chg_1d = round((s.iloc[-1] / s.iloc[-2] - 1) * 100, 2)
             # Trading Day Lookbacks: 3M=63, 6M=126, 1Y=252
+            # Since global index calendars differ, we map lookbacks to calendar index dates (US benchmark index)
             def get_ret(n):
-                if len(s) > n:
-                    past = s.iloc[-(n+1)]
-                    return round((s.iloc[-1] / past - 1) * 100, 2) if past != 0 else 0
+                if len(close_adj.index) > n:
+                    target_date = close_adj.index[-(n + 1)]
+                    past = s.asof(target_date)
+                    if pd.isna(past) or past == 0:
+                        return 0
+                    return round((s.iloc[-1] / past - 1) * 100, 2)
                 return 0
 
             index_stats.append({
@@ -261,7 +371,7 @@ for sym, name in MARKET_INDICES.items():
 # ── Write dashboard.json ─────────────────────────────────────────────
 output = {
     "last_updated":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    "as_of_date":    str(close.index[-1].date()),
+    "as_of_date":    str(close_raw.index[-1].date()),
     "total_etfs":    len(results),
     "benchmark":     BENCHMARK,
     "spy_returns":   spy_returns,
