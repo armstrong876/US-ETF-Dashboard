@@ -15,3 +15,6 @@ auto_update.log
 git_installer.exe
 *.xlsx
 # (We keep dashboard.json as it's the data source for the dashboard)
+
+# Development Folder (Ignored until ready)
+US ETF Portfolio Dashboard/
