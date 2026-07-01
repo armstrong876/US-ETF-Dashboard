@@ -33,6 +33,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add dashboard.json dashboard_all.json history.json history_all.json cache_raw.pkl cache_adj.pkl cache_raw_all.pkl cache_adj_all.pkl
+          git add dashboard.json dashboard_all.json history.json history_all.json cache_raw.pkl.gz cache_adj.pkl.gz cache_raw_all.pkl.gz cache_adj_all.pkl.gz
           git commit -m "Auto-update data [skip ci]" || echo "No changes to commit"
           git push

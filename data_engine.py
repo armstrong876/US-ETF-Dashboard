@@ -19,8 +19,8 @@ BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 ETF_LIST   = os.path.join(BASE_DIR, "etf_list.json")
 OUTPUT     = os.path.join(BASE_DIR, "dashboard.json")
 BENCHMARK  = "SPY"
-CACHE_RAW  = os.path.join(BASE_DIR, "cache_raw.pkl")
-CACHE_ADJ  = os.path.join(BASE_DIR, "cache_adj.pkl")
+CACHE_RAW  = os.path.join(BASE_DIR, "cache_raw.pkl.gz")
+CACHE_ADJ  = os.path.join(BASE_DIR, "cache_adj.pkl.gz")
 
 PERIODS = {            # label : trading-day lookback
     "1W":  5,
@@ -89,8 +89,8 @@ close_adj = pd.DataFrame()
 cache_loaded = False
 if os.path.exists(CACHE_RAW) and os.path.exists(CACHE_ADJ):
     try:
-        close_raw = pd.read_pickle(CACHE_RAW)
-        close_adj = pd.read_pickle(CACHE_ADJ)
+        close_raw = pd.read_pickle(CACHE_RAW, compression='gzip')
+        close_adj = pd.read_pickle(CACHE_ADJ, compression='gzip')
         if not close_raw.empty and not close_adj.empty:
             cache_loaded = True
             print(f"[{datetime.now():%H:%M:%S}] Cache loaded successfully. Last date in cache: {close_raw.index[-1].date()}")
@@ -195,8 +195,8 @@ close_raw = close_raw.loc[close_raw.index >= eleven_years_ago]
 close_adj = close_adj.loc[close_adj.index >= eleven_years_ago]
 
 try:
-    close_raw.to_pickle(CACHE_RAW)
-    close_adj.to_pickle(CACHE_ADJ)
+    close_raw.to_pickle(CACHE_RAW, compression='gzip')
+    close_adj.to_pickle(CACHE_ADJ, compression='gzip')
     print(f"[{datetime.now():%H:%M:%S}] Caches updated and saved to disk.")
 except Exception as e:
     print(f"[{datetime.now():%H:%M:%S}] Cache write error: {e}")
