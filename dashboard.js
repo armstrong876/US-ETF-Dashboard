@@ -430,13 +430,10 @@ function heatCell(val) {
 }
 
 function heatClass(v) {
-  if (v  >=  10) return 'heat-strong-pos';
-  if (v  >=   5) return 'heat-pos';
-  if (v  >=   1) return 'heat-slight-pos';
-  if (v  >=  -1) return 'heat-neutral';
-  if (v  >=  -5) return 'heat-slight-neg';
-  if (v  >= -10) return 'heat-neg';
-  return 'heat-strong-neg';
+  if (v == null) return 'heat-neutral';
+  if (v > 0) return 'heat-pos';
+  if (v < 0) return 'heat-neg';
+  return 'heat-neutral';
 }
 
 // ══════════════════════ RANKINGS TAB ════════════════════════
