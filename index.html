@@ -239,6 +239,13 @@
             Score = (1M × 0.2) + (3M × 0.3) + (6M × 0.3) + (12M × 0.2)
           </div>
           <p class="method-note">This ensures we capture both short-term performance and long-term established trends while giving higher importance to the 3-6 month window.</p>
+          
+          <h3 style="font-size: 13px; font-weight: 700; margin-top: 20px; margin-bottom: 8px; color: var(--text-primary);">Momentum Signal Thresholds</h3>
+          <ul class="method-list" style="margin-top: 8px;">
+            <li><strong>🟢 Strong:</strong> Score &ge; 15 (Strong upward trend)</li>
+            <li><strong>🟡 Neutral:</strong> Score between 5 and 15 (Consolidating)</li>
+            <li><strong>🔴 Weak:</strong> Score &lt; 5 (Downward trend / underperforming)</li>
+          </ul>
         </div>
       </div>
 
@@ -247,6 +254,10 @@
 
   <!-- ════════════════ TAB: SIGNALS ════════════════ -->
   <div class="tab-panel" id="tab-signals">
+    <div class="panel-header">
+      <h2>Momentum Buy/Sell Signals</h2>
+      <p class="panel-desc">Calculated using trailing momentum: 🟢 Strong Signal (Score &ge; 15) | 🟡 Neutral (Score 5 to 15) | 🔴 Weak (Score &lt; 5)</p>
+    </div>
     <div class="signals-grid" id="signalsGrid"></div>
   </div>
 
