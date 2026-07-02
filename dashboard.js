@@ -690,3 +690,151 @@ function showLoading(show) {
 
 function showError()  { document.getElementById('errorOverlay').style.display = 'flex'; }
 function hideError()  { document.getElementById('errorOverlay').style.display = 'none'; }
+
+// ══════════════════════ PERFORMANCE COMPARISON CHART ════════════════════════
+let HIST_DATA  = null;
+let perfChart  = null;
+
+// Fetch history.json once and cache it
+async function loadHistData() {
+  if (HIST_DATA) return HIST_DATA;
+  try {
+    const res  = await fetch('history.json?nocache=' + Date.now());
+    if (!res.ok) throw new Error('history.json not found');
+    HIST_DATA = await res.json();
+    return HIST_DATA;
+  } catch(e) {
+    return null;
+  }
+}
+
+// Curated colour palette for lines (VOO first = green)
+const PERF_COLORS = [
+  '#43a047', // VOO — green
+  '#1565c0', // slot 1 — royal blue
+  '#e65100', // slot 2 — deep orange
+  '#6a1b9a', // slot 3 — purple
+  '#00838f', // slot 4 — teal
+  '#c62828', // slot 5 — crimson
+];
+
+async function runPerfChart() {
+  const footer = document.getElementById('perfChartFooter');
+  footer.innerHTML = '<span class="perf-error" style="color:#6b7a99">Loading chart data…</span>';
+
+  const hist = await loadHistData();
+  if (!hist) {
+    footer.innerHTML = '<span class="perf-error">⚠️ history.json not available. Run data_engine.py first.</span>';
+    return;
+  }
+
+  // Collect user inputs (uppercased, trimmed, deduplicated)
+  const userTickers = ['perf1','perf2','perf3','perf4','perf5']
+    .map(id => document.getElementById(id).value.trim().toUpperCase())
+    .filter(t => t.length > 0);
+  const unique = [...new Set(userTickers)].slice(0, 5);
+
+  // Always include VOO as fixed anchor
+  const allTickers = ['VOO', ...unique.filter(t => t !== 'VOO')];
+
+  const labels  = hist.dates;
+  const datasets = [];
+  const missing  = [];
+
+  allTickers.forEach((ticker, i) => {
+    const series = hist.series[ticker];
+    if (!series) { missing.push(ticker); return; }
+    const color = PERF_COLORS[i] || PERF_COLORS[PERF_COLORS.length - 1];
+    datasets.push({
+      label:           ticker,
+      data:            series,
+      borderColor:     color,
+      backgroundColor: color + '18',
+      borderWidth:     ticker === 'VOO' ? 2.5 : 2,
+      pointRadius:     0,
+      pointHitRadius:  12,
+      tension:         0.3,
+      fill:            false,
+    });
+  });
+
+  if (datasets.length === 0) {
+    footer.innerHTML = '<span class="perf-error">⚠️ None of the entered tickers were found in history data.</span>';
+    return;
+  }
+
+  // Destroy existing chart if any
+  if (perfChart) { perfChart.destroy(); perfChart = null; }
+
+  const ctx = document.getElementById('perfChartCanvas').getContext('2d');
+  perfChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 3.2,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#ffffff',
+          borderColor:     '#dde2ea',
+          borderWidth:     1,
+          titleColor:      '#1a2235',
+          bodyColor:       '#3a4460',
+          padding:         12,
+          cornerRadius:    10,
+          boxShadow:       '0 4px 20px rgba(0,0,0,0.12)',
+          callbacks: {
+            title: items => `📅 ${items[0].label}`,
+            label: item => {
+              const nav = item.raw != null ? item.raw.toFixed(2) : '—';
+              const first = item.dataset.data[0] ?? 100;
+              const pct   = first > 0 ? ((item.raw / first - 1) * 100).toFixed(2) : '—';
+              const sign  = pct > 0 ? '+' : '';
+              return ` ${item.dataset.label}: ${nav}  (${sign}${pct}%)`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            maxTicksLimit: 12,
+            color: '#8898aa',
+            font: { size: 11 }
+          },
+          grid: { color: 'rgba(0,0,0,0.05)' }
+        },
+        y: {
+          ticks: {
+            color: '#8898aa',
+            font: { size: 11 },
+            callback: v => v.toFixed(0)
+          },
+          grid:  { color: 'rgba(0,0,0,0.06)' },
+          title: { display: true, text: 'Normalised Value (Base = 100)', color: '#8898aa', font: { size: 11 } }
+        }
+      }
+    }
+  });
+
+  // Render legend at bottom
+  const legendHTML = datasets.map(ds =>
+    `<span class="perf-legend-item">
+       <span class="perf-legend-dot" style="background:${ds.borderColor}"></span>
+       ${ds.label}
+     </span>`
+  ).join('');
+  const missingNote = missing.length
+    ? `<span class="perf-error" style="margin-left:auto">Not found: ${missing.join(', ')}</span>`
+    : '';
+  footer.innerHTML = legendHTML + missingNote;
+
+  // Allow Enter key in inputs
+  ['perf1','perf2','perf3','perf4','perf5'].forEach(id => {
+    document.getElementById(id).onkeydown = e => { if (e.key === 'Enter') runPerfChart(); };
+  });
+}
+

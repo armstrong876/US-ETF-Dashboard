@@ -32,7 +32,7 @@ def deploy_to_netlify():
     # Files to include in the deployment
     include_files = [
         'index.html', 'dashboard.js', 'style.css', 'auth.js',
-        'dashboard.json', 'dashboard_all.json', 'login.html',
+        'dashboard.json', 'dashboard_all.json', 'history.json', 'login.html',
         'netlify.toml', 'armstrong_vibrant_hero.png', 'armstrong_logo.jpg'
     ]
     

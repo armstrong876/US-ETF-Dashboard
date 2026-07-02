@@ -887,3 +887,146 @@ td.score-col.score-low  { color: var(--red); }
   white-space: nowrap;
   margin-top: auto;
 }
+
+/* ══════════════════════ PERFORMANCE COMPARISON CHART ══════════════════════ */
+.perf-chart-panel {
+  margin: 32px 0 8px;
+  background: #f4f6f9;
+  border: 1px solid #dde2ea;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+}
+
+.perf-chart-header {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 20px 24px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e7f0;
+}
+
+.perf-chart-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.perf-chart-icon { font-size: 28px; }
+
+.perf-chart-title h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a2235;
+  margin: 0 0 3px;
+}
+
+.perf-chart-title p {
+  font-size: 12px;
+  color: #6b7a99;
+  margin: 0;
+}
+
+.perf-inputs-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.perf-voo-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #e8f5e9;
+  border: 1.5px solid #4caf50;
+  color: #2e7d32;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.perf-voo-dot { color: #43a047; font-size: 14px; }
+
+.perf-input {
+  background: #ffffff;
+  border: 1.5px solid #c8d0e0;
+  border-radius: 8px;
+  color: #1a2235;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  width: 110px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+
+.perf-input::placeholder { color: #aab4c8; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.perf-input:focus { border-color: #4c6ef5; box-shadow: 0 0 0 3px rgba(76,110,245,0.12); }
+
+.perf-go-btn {
+  background: linear-gradient(135deg, #4c6ef5, #364fc7);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 3px 10px rgba(76,110,245,0.30);
+}
+
+.perf-go-btn:hover  { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(76,110,245,0.40); }
+.perf-go-btn:active { transform: translateY(0); }
+
+.perf-chart-area {
+  padding: 24px 28px 20px;
+  background: #f4f6f9;
+  position: relative;
+}
+
+.perf-chart-area canvas { width: 100% !important; max-height: 380px; }
+
+.perf-chart-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 24px 16px;
+  background: #ffffff;
+  border-top: 1px solid #e2e7f0;
+  min-height: 20px;
+}
+
+.perf-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #3a4460;
+  font-weight: 500;
+}
+
+.perf-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.perf-error {
+  font-size: 13px;
+  color: #e53935;
+  padding: 6px 0;
+}

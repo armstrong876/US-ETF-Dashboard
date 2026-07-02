@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css?v=1.1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="auth.js"></script>
 </head>
 <body>
@@ -190,6 +191,32 @@
         </thead>
         <tbody id="heatmapBody"></tbody>
       </table>
+    </div>
+
+    <!-- ════ ETF PERFORMANCE COMPARISON CHART ════ -->
+    <div class="perf-chart-panel" id="perfChartPanel">
+      <div class="perf-chart-header">
+        <div class="perf-chart-title">
+          <span class="perf-chart-icon">📈</span>
+          <div>
+            <h3>Performance Comparison</h3>
+            <p>Normalised to 100 — Enter up to 5 ETF tickers to compare vs VOO</p>
+          </div>
+        </div>
+        <div class="perf-inputs-row">
+          <div class="perf-voo-badge">VOO <span class="perf-voo-dot">●</span> Fixed</div>
+          <input class="perf-input" id="perf1" type="text" placeholder="ETF 1 e.g. QQQ" maxlength="8" />
+          <input class="perf-input" id="perf2" type="text" placeholder="ETF 2 e.g. SMH" maxlength="8" />
+          <input class="perf-input" id="perf3" type="text" placeholder="ETF 3 e.g. IWM" maxlength="8" />
+          <input class="perf-input" id="perf4" type="text" placeholder="ETF 4 e.g. GLD" maxlength="8" />
+          <input class="perf-input" id="perf5" type="text" placeholder="ETF 5 e.g. XLK" maxlength="8" />
+          <button class="perf-go-btn" onclick="runPerfChart()">Go ▶</button>
+        </div>
+      </div>
+      <div class="perf-chart-area">
+        <canvas id="perfChartCanvas"></canvas>
+      </div>
+      <div class="perf-chart-footer" id="perfChartFooter"></div>
     </div>
   </div>
 

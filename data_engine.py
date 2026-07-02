@@ -18,6 +18,7 @@ import pandas as pd
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 ETF_LIST   = os.path.join(BASE_DIR, "etf_list.json")
 OUTPUT     = os.path.join(BASE_DIR, "dashboard.json")
+HISTORY    = os.path.join(BASE_DIR, "history.json")
 BENCHMARK  = "SPY"
 CACHE_RAW  = os.path.join(BASE_DIR, "cache_raw.pkl.gz")
 CACHE_ADJ  = os.path.join(BASE_DIR, "cache_adj.pkl.gz")
@@ -391,3 +392,22 @@ print(f"   As-of date     : {output['as_of_date']}")
 print(f"\n   Top 5 Momentum:")
 for r in top10[:5]:
     print(f"   {r['rank']:2}. {r['symbol']:6}  Score: {r['score']:7.2f}  {r['signal']}")
+
+# ── Write history.json (last 1Y normalised prices for comparison chart) ──────
+try:
+    HISTORY_DAYS = 252  # ~1 trading year
+    hist_tickers = list(close_adj.columns)
+    hist_df = close_adj[hist_tickers].iloc[-HISTORY_DAYS:].copy()
+    # Normalise each series to 100 on first available day
+    hist_norm = (hist_df / hist_df.iloc[0] * 100).round(4)
+    dates = [str(d.date()) for d in hist_norm.index]
+    history_data = {
+        "dates": dates,
+        "series": {ticker: hist_norm[ticker].ffill().tolist()
+                   for ticker in hist_tickers if ticker in hist_norm.columns}
+    }
+    with open(HISTORY, "w") as f:
+        json.dump(history_data, f, separators=(',', ':'))
+    print(f"[{datetime.now():%H:%M:%S}] history.json written ({len(hist_tickers)} tickers, {len(dates)} days).")
+except Exception as e:
+    print(f"[{datetime.now():%H:%M:%S}] Warning: history.json write failed: {e}")
