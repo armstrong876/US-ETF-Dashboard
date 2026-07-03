@@ -190,11 +190,26 @@ except Exception as e:
 
 print(f"\n[{datetime.now():%H:%M:%S}] Price data loaded. Rows: {len(close_raw)}, Cols: {len(close_raw.columns)}")
 
+# ── Determine last COMPLETE trading day ──────────────────────────────────────────────────────────────
+def last_complete_trading_day(df_index):
+    import datetime as _dt
+    now_utc     = _dt.datetime.now(_dt.timezone.utc)
+    mkt_settled = (now_utc.hour > 21) or (now_utc.hour == 21 and now_utc.minute >= 30)
+    today_date  = _dt.date.today()
+    last_date   = df_index[-1].date()
+    if last_date >= today_date and not mkt_settled:
+        print(f"[{datetime.now():%H:%M:%S}] Market not yet closed. Using previous day as NAV date ({df_index[-2].date()}).")
+        return -2
+    return -1
+
+PRICE_IDX = last_complete_trading_day(close_raw.index)
+print(f"[{datetime.now():%H:%M:%S}] NAV date: {close_raw.index[PRICE_IDX].date()}")
+
 def pct_return(series, n_days, calendar_index):
-    """Return absolute % for <1Y, and Annualized (CAGR) % for >=1Y using date-based lookup."""
+    """Return % price change using raw close prices — matches finance website returns."""
     if len(series) < 5 or len(calendar_index) <= n_days:
         return None
-    current = series.iloc[-1]
+    current     = series.iloc[PRICE_IDX]              # Always use settled NAV date
     target_date = calendar_index[-(n_days + 1)]
     
     # Find the price at or before target_date (fallback: target_date-1, target_date-2, etc.)
@@ -236,7 +251,7 @@ for ticker in tickers:
         "category":    yf_p.get("category") or meta.get("category", ""),
         "aum":         yf_p.get("aum") or meta.get("aum", 0),
         "er":          yf_p.get("expense_ratio") or meta.get("er", 0),
-        "price":       round(float(series_raw.iloc[-1]), 2), # Use unadjusted Close for displayed quote price
+        "price":       round(float(series_raw.iloc[PRICE_IDX]), 2), # Last settled NAV (not intraday)
         
         # New Overview Fields
         "inception":   yf_p.get("inception") or meta.get("inception"),
@@ -309,17 +324,16 @@ for sym, name in MARKET_INDICES.items():
     if sym in close_raw.columns:
         s = close_raw[sym].dropna()
         if len(s) >= 2:
-            price = round(float(s.iloc[-1]), 2)
-            chg_1d = round((s.iloc[-1] / s.iloc[-2] - 1) * 100, 2)
-            # Trading Day Lookbacks: 3M=63, 6M=126, 1Y=252
-            # Since global index calendars differ, we map lookbacks to calendar index dates (US benchmark index)
+            price  = round(float(s.iloc[PRICE_IDX]), 2)
+            prev_i = PRICE_IDX - 1
+            chg_1d = round((s.iloc[PRICE_IDX] / s.iloc[prev_i] - 1) * 100, 2)
             def get_ret(n):
-                if len(close_adj.index) > n:
-                    target_date = close_adj.index[-(n + 1)]
+                if len(close_raw.index) > n:
+                    target_date = close_raw.index[PRICE_IDX - n]
                     past = s.asof(target_date)
                     if pd.isna(past) or past == 0:
                         return 0
-                    return round((s.iloc[-1] / past - 1) * 100, 2)
+                    return round((s.iloc[PRICE_IDX] / past - 1) * 100, 2)
                 return 0
 
             index_stats.append({
@@ -334,7 +348,7 @@ for sym, name in MARKET_INDICES.items():
 
 output = {
     "last_updated":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    "as_of_date":    str(close_raw.index[-1].date()),
+    "as_of_date":    str(close_raw.index[PRICE_IDX].date()),   # Always last fully settled trading day
     "total_etfs":    len(results),
     "benchmark":     BENCHMARK,
     "spy_returns":   spy_returns,
