@@ -717,6 +717,7 @@ async function loadHistData() {
     HIST_DATA = await res.json();
     return HIST_DATA;
   } catch(e) {
+    console.error('loadHistData error:', e);
     return null;
   }
 }
@@ -844,14 +845,13 @@ async function runPerfChart() {
     // Slice series data
     const rawSlice = series.slice(startIdx, endIdx + 1);
     
-    // Re-normalise to start at 100 on the first day of the slice
+    // Re-normalise to start at 0 (percentage return) on the first day of the slice
     const baseVal = rawSlice[0];
     if (baseVal === undefined || baseVal === 0) {
       missing.push(ticker);
       return;
     }
-    
-    const normalizedSlice = rawSlice.map(v => Number(((v / baseVal) * 100).toFixed(4)));
+    const normalizedSlice = rawSlice.map(v => Number(((v / baseVal - 1) * 100).toFixed(4)));
     const color = PERF_COLORS[i] || PERF_COLORS[PERF_COLORS.length - 1];
     
     datasets.push({
@@ -899,9 +899,8 @@ async function runPerfChart() {
             title: items => `📅 ${items[0].label}`,
             label: item => {
               const val = item.raw != null ? item.raw.toFixed(2) : '—';
-              const change = (item.raw - 100).toFixed(2);
-              const sign = change > 0 ? '+' : '';
-              return ` ${item.dataset.label}: ${val}  (${sign}${change}%)`;
+              const sign = item.raw > 0 ? '+' : '';
+              return ` ${item.dataset.label}: ${sign}${val}%`;
             }
           }
         }
@@ -919,10 +918,10 @@ async function runPerfChart() {
           ticks: {
             color: '#8898aa',
             font: { size: 11 },
-            callback: v => v.toFixed(0)
+            callback: v => (v >= 0 ? '+' : '') + v.toFixed(0) + '%'
           },
           grid:  { color: 'rgba(0,0,0,0.06)' },
-          title: { display: true, text: 'Normalised Value (Base = 100)', color: '#8898aa', font: { size: 11 } }
+          title: { display: true, text: 'Return (%)', color: '#8898aa', font: { size: 11 } }
         }
       }
     }

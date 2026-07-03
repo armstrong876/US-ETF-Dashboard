@@ -1041,6 +1041,7 @@ td.score-col.score-low  { color: var(--red); }
 .perf-timeframe-row {
   display: flex;
   align-items: center;
+  justify-content: center; /* Center the timeframe options */
   flex-wrap: wrap;
   gap: 8px;
 }

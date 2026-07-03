@@ -452,7 +452,7 @@ try:
     dates = [str(d.date()) for d in hist_norm.index]
     history_data = {
         "dates": dates,
-        "series": {ticker: hist_norm[ticker].ffill().tolist()
+        "series": {ticker: [None if pd.isna(val) else val for val in hist_norm[ticker].ffill().tolist()]
                    for ticker in hist_tickers if ticker in hist_norm.columns}
     }
     with open(HISTORY, "w") as f:

@@ -34,7 +34,18 @@
         },
 
         getSession: function() {
-            const sessionData = localStorage.getItem(AUTH_KEY);
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            let sessionData = localStorage.getItem(AUTH_KEY);
+            if (!sessionData && isLocal) {
+                const mockSession = {
+                    userId: 'armstrongetf',
+                    role: 'editor',
+                    name: 'Armstrong Capital (Local)',
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(AUTH_KEY, JSON.stringify(mockSession));
+                sessionData = localStorage.getItem(AUTH_KEY);
+            }
             if (!sessionData) return null;
             
             const session = JSON.parse(sessionData);
@@ -42,6 +53,12 @@
             
             // Check if session has expired (30 minutes)
             if (now - session.timestamp > SESSION_TIMEOUT) {
+                if (isLocal) {
+                    // Update timestamp on localhost instead of logging out
+                    session.timestamp = now;
+                    localStorage.setItem(AUTH_KEY, JSON.stringify(session));
+                    return session;
+                }
                 console.log("Session expired. Logging out...");
                 this.logout();
                 return null;
