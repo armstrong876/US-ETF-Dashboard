@@ -213,6 +213,23 @@
           <button class="perf-go-btn" onclick="runPerfChart()">Go ▶</button>
         </div>
       </div>
+      <div class="perf-timeframe-bar">
+        <div class="perf-timeframe-row">
+          <button class="perf-tf-btn" id="tf-1M" onclick="setChartTimeframe('1M')">1 Month</button>
+          <button class="perf-tf-btn" id="tf-3M" onclick="setChartTimeframe('3M')">3 Months</button>
+          <button class="perf-tf-btn" id="tf-6M" onclick="setChartTimeframe('6M')">6 Months</button>
+          <button class="perf-tf-btn active" id="tf-1Y" onclick="setChartTimeframe('1Y')">1 Year</button>
+          <button class="perf-tf-btn" id="tf-3Y" onclick="setChartTimeframe('3Y')">3 Years</button>
+          <button class="perf-tf-btn" id="tf-5Y" onclick="setChartTimeframe('5Y')">5 Years</button>
+          <button class="perf-tf-btn" id="tf-custom" onclick="setChartTimeframe('custom')">Custom Range</button>
+          
+          <div class="perf-custom-dates" id="perfCustomDates" style="display: none;">
+            <input type="date" id="perfFromDate" class="perf-date-input" onchange="runPerfChart()" />
+            <span class="perf-date-sep">to</span>
+            <input type="date" id="perfToDate" class="perf-date-input" onchange="runPerfChart()" />
+          </div>
+        </div>
+      </div>
       <div class="perf-chart-area">
         <canvas id="perfChartCanvas"></canvas>
       </div>

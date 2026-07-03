@@ -436,11 +436,19 @@ for r in top10[:5]:
 
 # ── Write history.json (last 1Y normalised prices for comparison chart) ──────
 try:
-    HISTORY_DAYS = 252  # ~1 trading year
+    HISTORY_DAYS = 1260  # ~5 trading years
     hist_tickers = list(close_adj.columns)
     hist_df = close_adj[hist_tickers].iloc[-HISTORY_DAYS:].copy()
-    # Normalise each series to 100 on first available day
-    hist_norm = (hist_df / hist_df.iloc[0] * 100).round(4)
+    
+    # Normalise each series to 100 on its first valid date to support newer ETFs
+    hist_norm = hist_df.copy()
+    for ticker in hist_norm.columns:
+        first_valid_idx = hist_norm[ticker].first_valid_index()
+        if first_valid_idx is not None:
+            first_val = hist_norm.loc[first_valid_idx, ticker]
+            if first_val > 0:
+                hist_norm[ticker] = (hist_norm[ticker] / first_val * 100).round(4)
+                
     dates = [str(d.date()) for d in hist_norm.index]
     history_data = {
         "dates": dates,

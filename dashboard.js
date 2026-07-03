@@ -190,6 +190,18 @@ function processData() {
   renderRankings();
   renderSignals();
   renderRelative();
+
+  // Control visibility of the ETF Performance comparison chart based on dataset mode
+  const chartPanel = document.getElementById('perfChartPanel');
+  if (chartPanel) {
+    if (datasetMode === 'all') {
+      chartPanel.style.display = 'none';
+    } else {
+      chartPanel.style.display = 'block';
+      // Auto-draw VOO chart on load
+      runPerfChart();
+    }
+  }
 }
 
 // ── Category Filter Population ─────────────────────────────
@@ -694,6 +706,7 @@ function hideError()  { document.getElementById('errorOverlay').style.display = 
 // ══════════════════════ PERFORMANCE COMPARISON CHART ════════════════════════
 let HIST_DATA  = null;
 let perfChart  = null;
+let CURRENT_TIMEFRAME = '1Y'; // Default timeframe
 
 // Fetch history.json once and cache it
 async function loadHistData() {
@@ -718,6 +731,45 @@ const PERF_COLORS = [
   '#c62828', // slot 5 — crimson
 ];
 
+// Set active timeframe and toggle inputs if 'custom' is selected
+async function setChartTimeframe(tf) {
+  CURRENT_TIMEFRAME = tf;
+
+  // Toggle active class on buttons
+  const buttons = document.querySelectorAll('.perf-tf-btn');
+  buttons.forEach(btn => btn.classList.remove('active'));
+  
+  const activeBtn = document.getElementById(`tf-${tf}`);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  const customDatesDiv = document.getElementById('perfCustomDates');
+  if (tf === 'custom') {
+    customDatesDiv.style.display = 'flex';
+    // Initialize dates if empty
+    const hist = await loadHistData();
+    if (hist && hist.dates.length > 0) {
+      const lastDate = hist.dates[hist.dates.length - 1];
+      const fromDateInput = document.getElementById('perfFromDate');
+      const toDateInput = document.getElementById('perfToDate');
+      
+      // Default to 1 Year range
+      const defaultFrom = new Date(new Date(lastDate).getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      
+      fromDateInput.value = fromDateInput.value || defaultFrom;
+      toDateInput.value = toDateInput.value || lastDate;
+      
+      fromDateInput.min = hist.dates[0];
+      fromDateInput.max = lastDate;
+      toDateInput.min = hist.dates[0];
+      toDateInput.max = lastDate;
+    }
+  } else {
+    customDatesDiv.style.display = 'none';
+  }
+
+  runPerfChart();
+}
+
 async function runPerfChart() {
   const footer = document.getElementById('perfChartFooter');
   footer.innerHTML = '<span class="perf-error" style="color:#6b7a99">Loading chart data…</span>';
@@ -728,6 +780,52 @@ async function runPerfChart() {
     return;
   }
 
+  // Determine date slicing indices based on timeframe
+  const dates = hist.dates;
+  let startIdx = 0;
+  let endIdx = dates.length - 1;
+
+  if (CURRENT_TIMEFRAME === 'custom') {
+    const fromVal = document.getElementById('perfFromDate').value;
+    const toVal = document.getElementById('perfToDate').value;
+    if (fromVal) {
+      const idx = dates.findIndex(d => d >= fromVal);
+      if (idx !== -1) startIdx = idx;
+    }
+    if (toVal) {
+      let idx = -1;
+      for (let i = dates.length - 1; i >= 0; i--) {
+        if (dates[i] <= toVal) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx !== -1) endIdx = idx;
+    }
+  } else {
+    let days = 365;
+    if (CURRENT_TIMEFRAME === '1M') days = 30;
+    else if (CURRENT_TIMEFRAME === '3M') days = 90;
+    else if (CURRENT_TIMEFRAME === '6M') days = 180;
+    else if (CURRENT_TIMEFRAME === '1Y') days = 365;
+    else if (CURRENT_TIMEFRAME === '3Y') days = 3 * 365;
+    else if (CURRENT_TIMEFRAME === '5Y') days = 5 * 365;
+
+    const lastDateStr = dates[dates.length - 1];
+    const lastDate = new Date(lastDateStr);
+    const targetDate = new Date(lastDate.getTime() - days * 24 * 60 * 60 * 1000);
+    const targetStr = targetDate.toISOString().split('T')[0];
+
+    const idx = dates.findIndex(d => d >= targetStr);
+    if (idx !== -1) startIdx = idx;
+  }
+
+  if (startIdx >= endIdx) {
+    startIdx = Math.max(0, endIdx - 5); // Fallback: show at least 5 days
+  }
+
+  const slicedLabels = dates.slice(startIdx, endIdx + 1);
+
   // Collect user inputs (uppercased, trimmed, deduplicated)
   const userTickers = ['perf1','perf2','perf3','perf4','perf5']
     .map(id => document.getElementById(id).value.trim().toUpperCase())
@@ -736,18 +834,29 @@ async function runPerfChart() {
 
   // Always include VOO as fixed anchor
   const allTickers = ['VOO', ...unique.filter(t => t !== 'VOO')];
-
-  const labels  = hist.dates;
   const datasets = [];
   const missing  = [];
 
   allTickers.forEach((ticker, i) => {
     const series = hist.series[ticker];
     if (!series) { missing.push(ticker); return; }
+    
+    // Slice series data
+    const rawSlice = series.slice(startIdx, endIdx + 1);
+    
+    // Re-normalise to start at 100 on the first day of the slice
+    const baseVal = rawSlice[0];
+    if (baseVal === undefined || baseVal === 0) {
+      missing.push(ticker);
+      return;
+    }
+    
+    const normalizedSlice = rawSlice.map(v => Number(((v / baseVal) * 100).toFixed(4)));
     const color = PERF_COLORS[i] || PERF_COLORS[PERF_COLORS.length - 1];
+    
     datasets.push({
       label:           ticker,
-      data:            series,
+      data:            normalizedSlice,
       borderColor:     color,
       backgroundColor: color + '18',
       borderWidth:     ticker === 'VOO' ? 2.5 : 2,
@@ -769,7 +878,7 @@ async function runPerfChart() {
   const ctx = document.getElementById('perfChartCanvas').getContext('2d');
   perfChart = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets },
+    data: { labels: slicedLabels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: true,
@@ -789,11 +898,10 @@ async function runPerfChart() {
           callbacks: {
             title: items => `📅 ${items[0].label}`,
             label: item => {
-              const nav = item.raw != null ? item.raw.toFixed(2) : '—';
-              const first = item.dataset.data[0] ?? 100;
-              const pct   = first > 0 ? ((item.raw / first - 1) * 100).toFixed(2) : '—';
-              const sign  = pct > 0 ? '+' : '';
-              return ` ${item.dataset.label}: ${nav}  (${sign}${pct}%)`;
+              const val = item.raw != null ? item.raw.toFixed(2) : '—';
+              const change = (item.raw - 100).toFixed(2);
+              const sign = change > 0 ? '+' : '';
+              return ` ${item.dataset.label}: ${val}  (${sign}${change}%)`;
             }
           }
         }
@@ -837,4 +945,5 @@ async function runPerfChart() {
     document.getElementById(id).onkeydown = e => { if (e.key === 'Enter') runPerfChart(); };
   });
 }
+
 
