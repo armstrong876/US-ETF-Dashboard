@@ -208,7 +208,7 @@ print(f"\n[{datetime.now():%H:%M:%S}] Price data loaded. Rows: {len(close_raw)},
 # Helper: safe percentage return
 # ─────────────────────────────────────────────────────────────────────────────
 def pct_return(series, n_days, calendar_index):
-    """Return absolute % for <1Y, and Annualized (CAGR) % for >=1Y using date-based lookup."""
+    """Return % price change using raw close prices — matches finance website returns."""
     if len(series) < 5 or len(calendar_index) <= n_days:
         return None
     current = series.iloc[-1]
@@ -229,10 +229,10 @@ def pct_return(series, n_days, calendar_index):
 # Calculate SPY returns (benchmark)
 # ─────────────────────────────────────────────────────────────────────────────
 spy_returns = {}
-if BENCHMARK in close_adj.columns:
-    spy_series = close_adj[BENCHMARK].dropna()
+if BENCHMARK in close_raw.columns:
+    spy_series = close_raw[BENCHMARK].dropna()
     for label, days in PERIODS.items():
-        spy_returns[label] = pct_return(spy_series, days, close_adj.index)
+        spy_returns[label] = pct_return(spy_series, days, close_raw.index)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Calculate returns for every ETF
@@ -280,7 +280,7 @@ for ticker in etf_meta:
 
     # ── Multi-timeframe returns ────────────────────────────────────────────
     for label, days in PERIODS.items():
-        val = pct_return(series_adj, days, close_adj.index) # Use Adj Close for performance/return metrics
+        val = pct_return(series_raw, days, close_raw.index)  # Use raw Close — matches what users see on finance sites
         row["returns"][label] = val
 
     # ── Momentum score ─────────────────────────────────────────────────────

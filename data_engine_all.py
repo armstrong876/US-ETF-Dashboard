@@ -209,10 +209,10 @@ def pct_return(series, n_days, calendar_index):
         return round((current / past - 1) * 100, 2)
 
 spy_returns = {}
-if BENCHMARK in close_adj.columns:
-    spy_series = close_adj[BENCHMARK].dropna()
+if BENCHMARK in close_raw.columns:
+    spy_series = close_raw[BENCHMARK].dropna()
     for label, days in PERIODS.items():
-        spy_returns[label] = pct_return(spy_series, days, close_adj.index)
+        spy_returns[label] = pct_return(spy_series, days, close_raw.index)
 
 print(f"[{datetime.now():%H:%M:%S}] Calculating returns...")
 results = []
@@ -252,7 +252,7 @@ for ticker in tickers:
     }
 
     for label, days in PERIODS.items():
-        val = pct_return(series_adj, days, close_adj.index) # Use Adj Close for return calculations
+        val = pct_return(series_raw, days, close_raw.index)  # Use raw Close — matches finance website prices
         row["returns"][label] = val
 
     score = 0.0
