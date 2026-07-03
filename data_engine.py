@@ -132,37 +132,56 @@ if cache_loaded:
         except Exception as e:
             print(f"[{datetime.now():%H:%M:%S}] Error fetching missing tickers: {e}")
 
-# ── Download fresh data ───────────────────────────────────────────────────────
+# ── Download fresh data — Priority Batched ────────────────────────────────────
+# Priority order (ensures most important symbols always get freshest data):
+#   Batch 1 — Market Indices  (index cards on dashboard)
+#   Batch 2 — Core 80 ETFs   (main universe — returns, momentum, signals)
+#   Batch 3 — Any remaining   (extra tickers added via data_engine_all)
 if cache_loaded:
-    # Warm start: Only download increment since the last cached date
-    last_date = close_raw.index[-1]
+    last_date  = close_raw.index[-1]
     start_date = last_date.strftime("%Y-%m-%d")
-    print(f"[{datetime.now():%H:%M:%S}] Fetching incremental update since {start_date}...")
-    
-    raw_new = yf.download(
-        tickers,
-        start=start_date,
-        interval="1d",
-        auto_adjust=False,
-        progress=False,
-        threads=True,
-    )
-    
-    if isinstance(raw_new.columns, pd.MultiIndex):
-        close_raw_new = raw_new["Close"]
-        close_adj_new = raw_new.get("Adj Close", raw_new["Close"])
-    else:
-        close_raw_new = raw_new[["Close"]]
-        close_raw_new.columns = tickers
-        close_adj_new = raw_new.get("Adj Close", close_raw_new)
+    print(f"[{datetime.now():%H:%M:%S}] Fetching incremental update since {start_date} (priority batched)...")
 
-      # Concat rows
-    close_raw = pd.concat([close_raw, close_raw_new])
-    close_adj = pd.concat([close_adj, close_adj_new])
-    
-    # Clean up index duplicates (keeping the latest downloaded data)
+    core_etf_symbols = [e["symbol"] for e in etf_meta]
+    index_symbols    = list(MARKET_INDICES.keys())
+    batch1 = index_symbols
+    batch2 = [t for t in core_etf_symbols if t not in batch1]
+    batch3 = [t for t in tickers if t not in batch1 and t not in batch2]
+
+    def fetch_batch(batch_tickers, label, start):
+        if not batch_tickers:
+            return pd.DataFrame(), pd.DataFrame()
+        try:
+            raw = yf.download(batch_tickers, start=start, interval="1d",
+                              auto_adjust=False, progress=False, threads=True)
+            if raw.empty:
+                return pd.DataFrame(), pd.DataFrame()
+            if isinstance(raw.columns, pd.MultiIndex):
+                r = raw["Close"]
+                a = raw.get("Adj Close", raw["Close"])
+            else:
+                r = raw[["Close"]]; r.columns = batch_tickers
+                a = raw.get("Adj Close", r)
+            print(f"[{datetime.now():%H:%M:%S}]   {label}: {len(batch_tickers)} tickers done.")
+            return r, a
+        except Exception as e:
+            print(f"[{datetime.now():%H:%M:%S}]   {label}: error — {e}")
+            return pd.DataFrame(), pd.DataFrame()
+
+    r1, a1 = fetch_batch(batch1, "Batch 1 — Indices",   start_date)
+    r2, a2 = fetch_batch(batch2, "Batch 2 — Core ETFs", start_date)
+    r3, a3 = fetch_batch(batch3, "Batch 3 — Remaining", start_date)
+
+    new_raw = pd.concat([r1, r2, r3], axis=1)
+    new_adj = pd.concat([a1, a2, a3], axis=1)
+    new_raw = new_raw.loc[:, ~new_raw.columns.duplicated(keep='last')]
+    new_adj = new_adj.loc[:, ~new_adj.columns.duplicated(keep='last')]
+
+    close_raw = pd.concat([close_raw, new_raw])
+    close_adj = pd.concat([close_adj, new_adj])
     close_raw = close_raw.loc[~close_raw.index.duplicated(keep='last')].sort_index()
     close_adj = close_adj.loc[~close_adj.index.duplicated(keep='last')].sort_index()
+
 else:
     # Cold start: Full 11-year download
     print(f"[{datetime.now():%H:%M:%S}] Fetching full 11-year history from Yahoo Finance...")

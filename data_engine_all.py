@@ -146,25 +146,46 @@ if cache_loaded:
         except Exception as e:
             print(f"[{datetime.now():%H:%M:%S}] Error fetching missing tickers: {e}")
 
-# ── Download fresh data ───────────────────────────────────────────────────────
+# ── Download fresh data — Priority Batched ────────────────────────────────────
+# Priority order (ensures most important symbols always get freshest data):
+#   Batch 1 — Market Indices  (index cards on dashboard — fetch first)
+#   Batch 2 — Core 80 ETFs   (main universe — returns, momentum, signals)
+#   Batch 3 — Remaining ETFs  (extended universe — lower priority)
 if cache_loaded:
-    # Warm start: Only download increment since the last cached date
-    last_date = close_raw.index[-1]
+    last_date  = close_raw.index[-1]
     start_date = last_date.strftime("%Y-%m-%d")
-    print(f"[{datetime.now():%H:%M:%S}] Fetching incremental update since {start_date} in batches...")
-    
-    close_raw_new, close_adj_new = download_in_batches(
-        tickers,
-        {"start": start_date, "interval": "1d", "auto_adjust": False}
-    )
+    print(f"[{datetime.now():%H:%M:%S}] Fetching incremental update since {start_date} (priority batched)...")
 
-    # Concat rows
-    close_raw = pd.concat([close_raw, close_raw_new])
-    close_adj = pd.concat([close_adj, close_adj_new])
-    
-    # Clean up index duplicates (keeping the latest downloaded data)
+    core_etf_symbols = []
+    core_list_path   = os.path.join(BASE_DIR, "etf_list.json")
+    if os.path.exists(core_list_path):
+        with open(core_list_path) as _f:
+            core_etf_symbols = [e["symbol"] for e in json.load(_f)]
+
+    index_symbols = list(MARKET_INDICES.keys())
+    batch1 = index_symbols                                                  # Priority 1
+    batch2 = [t for t in core_etf_symbols if t not in batch1]              # Priority 2
+    batch3 = [t for t in tickers if t not in batch1 and t not in batch2]   # Priority 3
+
+    inc_kwargs = {"start": start_date, "interval": "1d", "auto_adjust": False}
+
+    print(f"[{datetime.now():%H:%M:%S}]   Priority 1 — Indices ({len(batch1)} symbols)...")
+    r1, a1 = download_in_batches(batch1, inc_kwargs)
+    print(f"[{datetime.now():%H:%M:%S}]   Priority 2 — Core ETFs ({len(batch2)} symbols)...")
+    r2, a2 = download_in_batches(batch2, inc_kwargs)
+    print(f"[{datetime.now():%H:%M:%S}]   Priority 3 — Remaining ({len(batch3)} symbols)...")
+    r3, a3 = download_in_batches(batch3, inc_kwargs)
+
+    new_raw = pd.concat([r1, r2, r3], axis=1)
+    new_adj = pd.concat([a1, a2, a3], axis=1)
+    new_raw = new_raw.loc[:, ~new_raw.columns.duplicated(keep='last')]
+    new_adj = new_adj.loc[:, ~new_adj.columns.duplicated(keep='last')]
+
+    close_raw = pd.concat([close_raw, new_raw])
+    close_adj = pd.concat([close_adj, new_adj])
     close_raw = close_raw.loc[~close_raw.index.duplicated(keep='last')].sort_index()
     close_adj = close_adj.loc[~close_adj.index.duplicated(keep='last')].sort_index()
+
 else:
     # Cold start: Full 11-year download
     print(f"[{datetime.now():%H:%M:%S}] Fetching full 11-year history from Yahoo Finance in batches...")
