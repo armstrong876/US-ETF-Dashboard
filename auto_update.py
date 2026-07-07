@@ -21,14 +21,15 @@ def run_update():
         print(f"[{datetime.now():%H:%M:%S}] Running data_engine_all.py...")
         subprocess.run([sys.executable, "data_engine_all.py"], check=True)
         
-        # 3. Deploy to Netlify
-        print(f"[{datetime.now():%H:%M:%S}] Deploying updated data to Netlify...")
-        success, cloud_msg = deploy_to_netlify()
-        if success:
-            print(f"[{datetime.now():%H:%M:%S}] Cloud deployment succeeded: {cloud_msg}")
-        else:
-            print(f"[{datetime.now():%H:%M:%S}] Cloud deployment FAILED: {cloud_msg}")
-            sys.exit(1)
+        # 3. Deploy to Netlify (Disabled as requested to keep updates local/GitHub only)
+        # print(f"[{datetime.now():%H:%M:%S}] Deploying updated data to Netlify...")
+        # success, cloud_msg = deploy_to_netlify()
+        # if success:
+        #     print(f"[{datetime.now():%H:%M:%S}] Cloud deployment succeeded: {cloud_msg}")
+        # else:
+        #     print(f"[{datetime.now():%H:%M:%S}] Cloud deployment FAILED: {cloud_msg}")
+        #     sys.exit(1)
+        pass
             
     except Exception as e:
         print(f"[{datetime.now():%H:%M:%S}] Error running update: {e}")
