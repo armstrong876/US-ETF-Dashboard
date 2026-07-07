@@ -27,7 +27,6 @@ let vhPeriod = '1W';
 document.addEventListener('DOMContentLoaded', async () => {
   bindTabs();
   await loadData();
-  await handleInitialSync();
 });
 
 // ── Data Load ─────────────────────────────────────────────
@@ -35,69 +34,7 @@ async function loadData() {
   await fetchAndRender();
 }
 
-async function handleInitialSync() {
-  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (!isLocal) return;
 
-  // We only sync once on startup if the local dashboard data is old
-  await syncData(false); // force=false
-}
-
-async function syncData(force = false) {
-  const overlay = document.getElementById('loadingOverlay');
-  const loadTitle = overlay.querySelector('.load-title');
-  const loadSub = overlay.querySelector('.load-sub');
-
-  showLoading(true);
-  loadTitle.textContent = "Checking for Updates";
-  loadSub.textContent = "Connecting to local data engine...";
-
-  try {
-    const res = await fetch('/api/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        include_all: datasetMode === 'all', 
-        force: force
-      })
-    });
-    
-    if (!res.ok) {
-        throw new Error(`Server returned ${res.status}`);
-    }
-
-    const data = await res.json();
-    
-    if (data.status === 'success') {
-      loadTitle.textContent = "Cloud Sync Success!";
-      loadSub.textContent = "Today's data is now LIVE for your team.";
-      showToast(data.message, 'success');
-      await new Promise(r => setTimeout(r, 2000));
-    } else if (data.status === 'partial_success') {
-      loadTitle.textContent = "Sync Warning";
-      loadSub.textContent = "Local data OK. Cloud Sync FAILED: " + (data.error_detail || "Check console");
-      showToast(data.message, 'warning');
-      console.error("Netlify Sync Error:", data.error_detail);
-      await new Promise(r => setTimeout(r, 4000));
-    } else if (data.status === 'up_to_date') {
-      loadTitle.textContent = "Already Current";
-      loadSub.textContent = data.message;
-      showToast(data.message, 'info');
-      await new Promise(r => setTimeout(r, 1500));
-    } else {
-      throw new Error(data.message || "Unknown server error");
-    }
-    
-    // Always reload UI data after a sync attempt
-    await loadData();
-    
-  } catch (e) {
-    console.error("Sync Error:", e);
-    showToast('Refresh Failed: ' + e.message, 'error');
-    showLoading(false);
-    // Don't re-throw, just stop the overlay
-  }
-}
 
 async function fetchAndRender() {
   showLoading(true);
@@ -118,11 +55,11 @@ async function fetchAndRender() {
     const currentDay = await today;
     const isUpToDate = DATA.as_of_date === currentDay;
 
-    if (!isLocal && DATA) {
+    if (DATA) {
       if (isUpToDate) {
-        showToast('Success: Dashboard is up to date with today\'s market figures.', 'success');
+        showToast('Dashboard is up to date with today\'s market figures.', 'success');
       } else {
-        showToast('Notice: Data shown is from ' + DATA.as_of_date + '. Admin: Use the local server to sync today\'s data.', 'info');
+        showToast('Data shown is from ' + DATA.as_of_date + '. Next auto-update: 7:00 AM IST.', 'info');
       }
     }
   } catch (e) {
