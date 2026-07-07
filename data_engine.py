@@ -243,7 +243,10 @@ def last_complete_trading_day(df_index):
     return -1
 
 PRICE_IDX = last_complete_trading_day(close_raw.index)  # -1 (today settled) or -2 (prev day)
-print(f"[{datetime.now():%H:%M:%S}] NAV date: {close_raw.index[PRICE_IDX].date()}")
+NAV_DATE = close_raw.index[PRICE_IDX]
+NAV_DATE_POS = list(close_raw.index).index(NAV_DATE)
+PREV_NAV_DATE = close_raw.index[NAV_DATE_POS - 1]
+print(f"[{datetime.now():%H:%M:%S}] NAV date: {NAV_DATE.date()}")
 
 # ───────────────────────────────────────────────────────────────────────────────────
 # Helper: safe percentage return
@@ -252,10 +255,10 @@ def pct_return(series, n_days, calendar_index):
     """Return % price change using raw close prices — matches finance website returns."""
     if len(series) < 5 or len(calendar_index) <= n_days:
         return None
-    current = series.iloc[PRICE_IDX]              # Always use settled NAV date
-    target_date = calendar_index[-(n_days + 1)]
+    current = series.asof(NAV_DATE)              # Always use settled NAV date
+    target_date = calendar_index[NAV_DATE_POS - n_days]
     
-    # Find the price at or before target_date (fallback: target_date-1, target_date-2, etc.)
+    # Find the price at or before target_date
     past = series.asof(target_date)
     
     if pd.isna(current) or pd.isna(past) or past == 0:
@@ -304,7 +307,7 @@ for ticker in etf_meta:
         "category":    yf_p.get("category") or meta.get("category", ""),
         "aum":         yf_p.get("aum") or meta.get("aum", 0),
         "er":          yf_p.get("expense_ratio") or meta.get("er", 0),
-        "price":       round(float(series_raw.iloc[PRICE_IDX]), 2), # Last settled NAV (not intraday)
+        "price":       round(float(series_raw.asof(NAV_DATE)), 2), # Last settled NAV (not intraday)
         
         # New Overview Fields
         "inception":   yf_p.get("inception") or meta.get("inception"),
@@ -387,17 +390,18 @@ for sym, name in MARKET_INDICES.items():
     if sym in close_raw.columns:
         s = close_raw[sym].dropna()
         if len(s) >= 2:
-            price  = round(float(s.iloc[PRICE_IDX]), 2)        # Last settled NAV
-            prev_i = PRICE_IDX - 1                              # Day before settled NAV
-            chg_1d = round((s.iloc[PRICE_IDX] / s.iloc[prev_i] - 1) * 100, 2)
+            price = round(float(s.asof(NAV_DATE)), 2)           # Last settled NAV
+            prev_price = s.asof(PREV_NAV_DATE)                  # Day before settled NAV
+            chg_1d = round((price / prev_price - 1) * 100, 2) if prev_price else 0
+            
             # Return lookbacks are relative to the settled price date
             def get_ret(n):
                 if len(close_raw.index) > n:
-                    target_date = close_raw.index[PRICE_IDX - n]
+                    target_date = close_raw.index[NAV_DATE_POS - n]
                     past = s.asof(target_date)
                     if pd.isna(past) or past == 0:
                         return 0
-                    return round((s.iloc[PRICE_IDX] / past - 1) * 100, 2)
+                    return round((price / past - 1) * 100, 2)
                 return 0
 
             index_stats.append({
@@ -413,7 +417,7 @@ for sym, name in MARKET_INDICES.items():
 # ── Write dashboard.json ─────────────────────────────────────────────
 output = {
     "last_updated":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    "as_of_date":    str(close_raw.index[PRICE_IDX].date()),   # Always last fully settled trading day
+    "as_of_date":    str(NAV_DATE.date()),   # Always last fully settled trading day
     "total_etfs":    len(results),
     "benchmark":     BENCHMARK,
     "spy_returns":   spy_returns,
