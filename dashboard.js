@@ -875,6 +875,10 @@ async function runPerfChart() {
   // Destroy existing chart if any
   if (perfChart) { perfChart.destroy(); perfChart = null; }
 
+  const isLight = document.body.classList.contains('light-theme');
+  const tickColor = isLight ? '#475569' : '#8898aa';
+  const gridColor = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)';
+
   const ctx = document.getElementById('perfChartCanvas').getContext('2d');
   perfChart = new Chart(ctx, {
     type: 'line',
@@ -887,11 +891,11 @@ async function runPerfChart() {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#ffffff',
-          borderColor:     '#dde2ea',
+          backgroundColor: isLight ? '#ffffff' : '#1a1f2e',
+          borderColor:     isLight ? '#dde2ea' : 'rgba(255,255,255,0.08)',
           borderWidth:     1,
-          titleColor:      '#1a2235',
-          bodyColor:       '#3a4460',
+          titleColor:      isLight ? '#0f172a' : '#f0f2ff',
+          bodyColor:       isLight ? '#334155' : '#8b9ab5',
           padding:         12,
           cornerRadius:    10,
           boxShadow:       '0 4px 20px rgba(0,0,0,0.12)',
@@ -909,19 +913,19 @@ async function runPerfChart() {
         x: {
           ticks: {
             maxTicksLimit: 12,
-            color: '#8898aa',
+            color: tickColor,
             font: { size: 11 }
           },
-          grid: { color: 'rgba(0,0,0,0.05)' }
+          grid: { color: gridColor }
         },
         y: {
           ticks: {
-            color: '#8898aa',
+            color: tickColor,
             font: { size: 11 },
             callback: v => (v >= 0 ? '+' : '') + v.toFixed(0) + '%'
           },
-          grid:  { color: 'rgba(0,0,0,0.06)' },
-          title: { display: true, text: 'Return (%)', color: '#8898aa', font: { size: 11 } }
+          grid:  { color: gridColor },
+          title: { display: true, text: 'Return (%)', color: tickColor, font: { size: 11 } }
         }
       }
     }
@@ -929,7 +933,7 @@ async function runPerfChart() {
 
   // Render legend at bottom
   const legendHTML = datasets.map(ds =>
-    `<span class="perf-legend-item">
+    `<span class="perf-legend-item" style="color: var(--text-secondary)">
        <span class="perf-legend-dot" style="background:${ds.borderColor}"></span>
        ${ds.label}
      </span>`
@@ -944,5 +948,37 @@ async function runPerfChart() {
     document.getElementById(id).onkeydown = e => { if (e.key === 'Enter') runPerfChart(); };
   });
 }
+
+// ── Theme Switcher Logic ─────────────────────────────────────────────────────
+function initTheme() {
+  const savedTheme = localStorage.getItem('dashboard_theme') || 'dark';
+  const isLight = savedTheme === 'light';
+  
+  document.body.classList.toggle('light-theme', isLight);
+  updateThemeButton(isLight);
+}
+
+function toggleTheme() {
+  const isLight = document.body.classList.toggle('light-theme');
+  localStorage.setItem('dashboard_theme', isLight ? 'light' : 'dark');
+  updateThemeButton(isLight);
+  
+  // Re-run perf chart so the canvas styles, gridlines and scale colors redraw instantly
+  const chartPanel = document.getElementById('perfChartPanel');
+  if (chartPanel && chartPanel.style.display !== 'none') {
+    runPerfChart();
+  }
+}
+
+function updateThemeButton(isLight) {
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) {
+    btn.innerHTML = isLight ? '🌙 Black Mode' : '☀️ Light Mode';
+  }
+}
+
+// Call theme initialization on load
+initTheme();
+
 
 

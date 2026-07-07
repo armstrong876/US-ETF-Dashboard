@@ -42,6 +42,36 @@
   --shadow-glow: 0 0 32px rgba(99,102,241,0.18);
 }
 
+/* ── Light Grey Theme overrides ── */
+body.light-theme {
+  --bg-base:       #f1f5f9; /* light grey background */
+  --bg-surface:    #ffffff; /* clean white card blocks */
+  --bg-elevated:   #f8fafc;
+  --bg-card:       #ffffff;
+  --bg-hover:      #e2e8f0;
+
+  --border:        #e2e8f0; /* clean light borders */
+  --border-bright: #cbd5e1;
+
+  --text-primary:  #0f172a; /* dark slate main text */
+  --text-secondary:#475569; /* slate gray body text */
+  --text-muted:    #94a3b8;
+
+  --accent:        #4f46e5;
+  --accent-glow:   rgba(79,70,229,0.12);
+  --accent2:       #7c3aed;
+
+  --green:         #15803d; /* readable green */
+  --green-bg:      rgba(21,128,61,0.08);
+  --yellow:        #a16207;
+  --yellow-bg:     rgba(161,98,7,0.08);
+  --red:           #b91c1c; /* readable red */
+  --red-bg:        rgba(185,28,28,0.08);
+
+  --shadow-card: 0 4px 20px rgba(15,23,42,0.05);
+  --shadow-glow: 0 0 24px rgba(79,70,229,0.06);
+}
+
 .green { color: var(--green) !important; }
 .red   { color: var(--red) !important; }
 
@@ -589,9 +619,9 @@ td.score-col.score-low  { color: var(--red); }
 }
 
 .market-card {
-  background: rgba(30, 41, 59, 0.4);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px 14px;
   display: flex;
@@ -601,13 +631,13 @@ td.score-col.score-low  { color: var(--red); }
 
 .market-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(99, 102, 241, 0.4);
+  border-color: var(--accent);
 }
 
 .market-name {
   font-size: 10px;
   font-weight: 800;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 4px;
@@ -640,7 +670,7 @@ td.score-col.score-low  { color: var(--red); }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--border);
   padding-top: 10px;
 }
 
@@ -664,7 +694,7 @@ td.score-col.score-low  { color: var(--red); }
   flex-direction: column;
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .m-stat-sub span {
@@ -892,10 +922,10 @@ td.score-col.score-low  { color: var(--red); }
 .perf-chart-panel {
   margin: 32px 0 8px;
   background: #f4f6f9;
-  border: 1px solid #dde2ea;
+  border: 1px solid var(--border);
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+  box-shadow: var(--shadow-card);
 }
 
 .perf-chart-header {
@@ -904,8 +934,8 @@ td.score-col.score-low  { color: var(--red); }
   flex-wrap: wrap;
   gap: 16px;
   padding: 20px 24px 16px;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e7f0;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
 }
 
 .perf-chart-title {
@@ -921,13 +951,13 @@ td.score-col.score-low  { color: var(--red); }
 .perf-chart-title h3 {
   font-size: 16px;
   font-weight: 700;
-  color: #1a2235;
+  color: var(--text-primary);
   margin: 0 0 3px;
 }
 
 .perf-chart-title p {
   font-size: 12px;
-  color: #6b7a99;
+  color: var(--text-secondary);
   margin: 0;
 }
 
@@ -955,10 +985,10 @@ td.score-col.score-low  { color: var(--red); }
 .perf-voo-dot { color: #43a047; font-size: 14px; }
 
 .perf-input {
-  background: #ffffff;
-  border: 1.5px solid #c8d0e0;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border);
   border-radius: 8px;
-  color: #1a2235;
+  color: var(--text-primary);
   font-family: var(--font-mono, monospace);
   font-size: 12px;
   font-weight: 600;
@@ -970,8 +1000,8 @@ td.score-col.score-low  { color: var(--red); }
   outline: none;
 }
 
-.perf-input::placeholder { color: #aab4c8; font-weight: 400; text-transform: none; letter-spacing: 0; }
-.perf-input:focus { border-color: #4c6ef5; box-shadow: 0 0 0 3px rgba(76,110,245,0.12); }
+.perf-input::placeholder { color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.perf-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 
 .perf-go-btn {
   background: linear-gradient(135deg, #4c6ef5, #364fc7);
@@ -992,7 +1022,7 @@ td.score-col.score-low  { color: var(--red); }
 
 .perf-chart-area {
   padding: 24px 28px 20px;
-  background: #f4f6f9;
+  background: var(--bg-base);
   position: relative;
 }
 
@@ -1004,8 +1034,8 @@ td.score-col.score-low  { color: var(--red); }
   flex-wrap: wrap;
   gap: 10px;
   padding: 12px 24px 16px;
-  background: #ffffff;
-  border-top: 1px solid #e2e7f0;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
   min-height: 20px;
 }
 
@@ -1033,9 +1063,9 @@ td.score-col.score-low  { color: var(--red); }
 
 /* ── Timeframe Bar Layout ── */
 .perf-timeframe-bar {
-  background: #f8fafc;
+  background: var(--bg-elevated);
   padding: 12px 24px;
-  border-bottom: 1px solid #e2e7f0;
+  border-bottom: 1px solid var(--border);
 }
 
 .perf-timeframe-row {
@@ -1048,9 +1078,9 @@ td.score-col.score-low  { color: var(--red); }
 
 /* ── Timeframe Buttons ── */
 .perf-tf-btn {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  color: #475569;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
   border-radius: 20px;
   padding: 6px 14px;
   font-size: 12px;
@@ -1061,9 +1091,9 @@ td.score-col.score-low  { color: var(--red); }
 }
 
 .perf-tf-btn:hover {
-  background: #f1f5f9;
-  border-color: #94a3b8;
-  color: #1e293b;
+  background: var(--bg-hover);
+  border-color: var(--border-bright);
+  color: var(--text-primary);
 }
 
 .perf-tf-btn.active {
@@ -1080,15 +1110,15 @@ td.score-col.score-low  { color: var(--red); }
   gap: 6px;
   margin-left: 12px;
   padding-left: 12px;
-  border-left: 1.5px solid #e2e8f0;
+  border-left: 1.5px solid var(--border);
   animation: fadeIn 0.3s ease;
 }
 
 .perf-date-input {
-  background: #ffffff;
-  border: 1.5px solid #c8d0e0;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border);
   border-radius: 8px;
-  color: #1a2235;
+  color: var(--text-primary);
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -1110,5 +1140,10 @@ td.score-col.score-low  { color: var(--red); }
 @keyframes fadeIn {
   from { opacity: 0; transform: translateX(-5px); }
   to { opacity: 1; transform: translateX(0); }
+}
+
+.theme-toggle-btn:hover {
+  background: var(--bg-hover) !important;
+  border-color: var(--accent) !important;
 }
 

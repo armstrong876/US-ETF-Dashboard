@@ -25,6 +25,7 @@
       </div>
     </div>
     <div class="header-meta">
+      <button id="themeToggleBtn" class="theme-toggle-btn" onclick="toggleTheme()" style="background: none; border: 1px solid var(--border-bright); border-radius: 6px; padding: 4px 12px; font-size: 11px; color: var(--accent); cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s; margin-right: 8px;">☀️ Light Mode</button>
       <div class="dataset-toggle">
         <button id="ds100" class="toggle-btn active" onclick="switchDataset('100')">Universe</button>
         <button id="dsAll" class="toggle-btn" onclick="switchDataset('all')">All ETFs</button>
@@ -34,7 +35,7 @@
         <span id="updateText">Loading…</span>
       </div>
       <div class="meta-pill" id="asOfDate">As of: —</div>
-      <button class="btn-ghost" onclick="Auth.logout()" style="color: #ef4444; border: 1px solid rgba(239,68,68,0.3); border-radius: 6px; padding: 4px 12px; font-size: 11px;">Logout</button>
+      <button class="btn-ghost" onclick="Auth.logout()" style="color: #ef4444; border: 1px solid rgba(239,68,68,0.3); border-radius: 6px; padding: 4px 12px; font-size: 11px; font-weight: 500;">Logout</button>
     </div>
   </div>
 </header>
