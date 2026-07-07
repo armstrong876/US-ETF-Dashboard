@@ -919,13 +919,14 @@ td.score-col.score-low  { color: var(--red); }
 }
 
 /* ══════════════════════ PERFORMANCE COMPARISON CHART ══════════════════════ */
+/* ── Always stays in white/light style regardless of dark/light mode toggle ── */
 .perf-chart-panel {
   margin: 32px 0 8px;
   background: #f4f6f9;
-  border: 1px solid var(--border);
+  border: 1px solid #dde2ea;
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: var(--shadow-card);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.10);
 }
 
 .perf-chart-header {
@@ -934,8 +935,8 @@ td.score-col.score-low  { color: var(--red); }
   flex-wrap: wrap;
   gap: 16px;
   padding: 20px 24px 16px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border);
+  background: #ffffff;
+  border-bottom: 1px solid #e2e7f0;
 }
 
 .perf-chart-title {
@@ -951,13 +952,13 @@ td.score-col.score-low  { color: var(--red); }
 .perf-chart-title h3 {
   font-size: 16px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #1a2235;
   margin: 0 0 3px;
 }
 
 .perf-chart-title p {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: #6b7a99;
   margin: 0;
 }
 
@@ -985,10 +986,10 @@ td.score-col.score-low  { color: var(--red); }
 .perf-voo-dot { color: #43a047; font-size: 14px; }
 
 .perf-input {
-  background: var(--bg-surface);
-  border: 1.5px solid var(--border);
+  background: #ffffff;
+  border: 1.5px solid #c8d0e0;
   border-radius: 8px;
-  color: var(--text-primary);
+  color: #1a2235;
   font-family: var(--font-mono, monospace);
   font-size: 12px;
   font-weight: 600;
@@ -1000,8 +1001,8 @@ td.score-col.score-low  { color: var(--red); }
   outline: none;
 }
 
-.perf-input::placeholder { color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
-.perf-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.perf-input::placeholder { color: #aab4c8; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.perf-input:focus { border-color: #4c6ef5; box-shadow: 0 0 0 3px rgba(76,110,245,0.12); }
 
 .perf-go-btn {
   background: linear-gradient(135deg, #4c6ef5, #364fc7);
@@ -1022,7 +1023,7 @@ td.score-col.score-low  { color: var(--red); }
 
 .perf-chart-area {
   padding: 24px 28px 20px;
-  background: var(--bg-base);
+  background: #f4f6f9;
   position: relative;
 }
 
@@ -1034,8 +1035,8 @@ td.score-col.score-low  { color: var(--red); }
   flex-wrap: wrap;
   gap: 10px;
   padding: 12px 24px 16px;
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border);
+  background: #ffffff;
+  border-top: 1px solid #e2e7f0;
   min-height: 20px;
 }
 
@@ -1063,24 +1064,24 @@ td.score-col.score-low  { color: var(--red); }
 
 /* ── Timeframe Bar Layout ── */
 .perf-timeframe-bar {
-  background: var(--bg-elevated);
+  background: #f8fafc;
   padding: 12px 24px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid #e2e7f0;
 }
 
 .perf-timeframe-row {
   display: flex;
   align-items: center;
-  justify-content: center; /* Center the timeframe options */
+  justify-content: center;
   flex-wrap: wrap;
   gap: 8px;
 }
 
 /* ── Timeframe Buttons ── */
 .perf-tf-btn {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
   border-radius: 20px;
   padding: 6px 14px;
   font-size: 12px;
@@ -1091,9 +1092,9 @@ td.score-col.score-low  { color: var(--red); }
 }
 
 .perf-tf-btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-bright);
-  color: var(--text-primary);
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #1e293b;
 }
 
 .perf-tf-btn.active {
@@ -1110,15 +1111,15 @@ td.score-col.score-low  { color: var(--red); }
   gap: 6px;
   margin-left: 12px;
   padding-left: 12px;
-  border-left: 1.5px solid var(--border);
+  border-left: 1.5px solid #e2e8f0;
   animation: fadeIn 0.3s ease;
 }
 
 .perf-date-input {
-  background: var(--bg-surface);
-  border: 1.5px solid var(--border);
+  background: #ffffff;
+  border: 1.5px solid #c8d0e0;
   border-radius: 8px;
-  color: var(--text-primary);
+  color: #1a2235;
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;

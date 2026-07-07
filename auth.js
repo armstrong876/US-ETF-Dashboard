@@ -79,7 +79,7 @@
                 window.location.href = 'login.html';
             } else if (session && isLoginPage) {
                 // If already logged in and on login page, go to dashboard
-                window.location.href = 'index.html';
+                window.location.href = '/';
             }
         },
 

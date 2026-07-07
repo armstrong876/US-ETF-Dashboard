@@ -415,7 +415,7 @@
 
             const result = Auth.login(uid, pass);
             if (result.success) {
-                window.location.href = 'index.html';
+                window.location.href = '/';
             } else {
                 err.innerText = result.message;
                 err.style.display = 'block';
