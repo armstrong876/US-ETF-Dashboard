@@ -153,8 +153,15 @@ if cache_loaded:
 #   Batch 3 — Remaining ETFs  (extended universe — lower priority)
 if cache_loaded:
     last_date  = close_raw.index[-1]
-    start_date = last_date.strftime("%Y-%m-%d")
-    print(f"[{datetime.now():%H:%M:%S}] Fetching incremental update since {start_date} (priority batched)...")
+    # Go back 5 calendar days to safely cover weekends + public holidays gaps
+    # so we never miss a trading day due to cache being slightly stale.
+    fetch_from = last_date - pd.DateOffset(days=5)
+    start_date = fetch_from.strftime("%Y-%m-%d")
+    # end=TODAY is EXCLUSIVE in yfinance — so data is always capped at YESTERDAY.
+    # This guarantees previous-day data regardless of what time the script runs.
+    from datetime import date as _date_cls
+    YESTERDAY  = _date_cls.today().strftime("%Y-%m-%d")
+    print(f"[{datetime.now():%H:%M:%S}] Fetching incremental update {start_date} → {YESTERDAY} (prev day cap, priority batched)...")
 
     core_etf_symbols = []
     core_list_path   = os.path.join(BASE_DIR, "etf_list.json")
@@ -167,7 +174,7 @@ if cache_loaded:
     batch2 = [t for t in core_etf_symbols if t not in batch1]              # Priority 2
     batch3 = [t for t in tickers if t not in batch1 and t not in batch2]   # Priority 3
 
-    inc_kwargs = {"start": start_date, "interval": "1d", "auto_adjust": False}
+    inc_kwargs = {"start": start_date, "end": YESTERDAY, "interval": "1d", "auto_adjust": False}
 
     print(f"[{datetime.now():%H:%M:%S}]   Priority 1 — Indices ({len(batch1)} symbols)...")
     r1, a1 = download_in_batches(batch1, inc_kwargs)
@@ -187,11 +194,14 @@ if cache_loaded:
     close_adj = close_adj.loc[~close_adj.index.duplicated(keep='last')].sort_index()
 
 else:
-    # Cold start: Full 11-year download
-    print(f"[{datetime.now():%H:%M:%S}] Fetching full 11-year history from Yahoo Finance in batches...")
+    # Cold start: Full 11-year download — end=TODAY (exclusive) caps at yesterday
+    from datetime import date as _date_cls
+    YESTERDAY = _date_cls.today().strftime("%Y-%m-%d")
+    print(f"[{datetime.now():%H:%M:%S}] Fetching full 11-year history from Yahoo Finance in batches (capped at {YESTERDAY})...")
     close_raw, close_adj = download_in_batches(
         tickers,
-        {"period": "11y", "interval": "1d", "auto_adjust": False}
+        {"start": (pd.Timestamp.today() - pd.DateOffset(years=11)).strftime("%Y-%m-%d"),
+         "end": YESTERDAY, "interval": "1d", "auto_adjust": False}
     )
 
 # ── Bound Cache & Save ────────────────────────────────────────────────────────
@@ -213,14 +223,13 @@ print(f"\n[{datetime.now():%H:%M:%S}] Price data loaded. Rows: {len(close_raw)},
 
 # ── Determine last COMPLETE trading day ──────────────────────────────────────────────────────────────
 def last_complete_trading_day(df_index):
-    import datetime as _dt
-    now_utc     = _dt.datetime.now(_dt.timezone.utc)
-    mkt_settled = (now_utc.hour > 21) or (now_utc.hour == 21 and now_utc.minute >= 30)
-    today_date  = _dt.date.today()
-    last_date   = df_index[-1].date()
-    if last_date >= today_date and not mkt_settled:
-        print(f"[{datetime.now():%H:%M:%S}] Market not yet closed. Using previous day as NAV date ({df_index[-2].date()}).")
-        return -2
+    """
+    Since all downloads are capped at end=YESTERDAY (exclusive), the last row
+    in the DataFrame is always the previous trading day's settled close.
+    No time-based check needed — always use the last available row.
+    """
+    last_date = df_index[-1].date()
+    print(f"[{datetime.now():%H:%M:%S}] Using last available settled date: {last_date}")
     return -1
 
 PRICE_IDX = last_complete_trading_day(close_raw.index)
@@ -343,31 +352,41 @@ bottom10 = [
 ]
 
 # ── Calculate Market Indices Stats ────────────────────────────────────
+# Each index uses its OWN last available date — not the global US NAV date.
+# This ensures Nifty/Indian indices show their correct settlement date.
 index_stats = []
 for sym, name in MARKET_INDICES.items():
     if sym in close_raw.columns:
         s = close_raw[sym].dropna()
         if len(s) >= 2:
-            price = round(float(s.asof(NAV_DATE)), 2)
-            prev_price = s.asof(PREV_NAV_DATE)
-            chg_1d = round((price / prev_price - 1) * 100, 2) if prev_price else 0
-            def get_ret(n):
-                if len(close_raw.index) > n:
-                    target_date = close_raw.index[NAV_DATE_POS - n]
-                    past = s.asof(target_date)
-                    if pd.isna(past) or past == 0:
+            # Downloads are capped at end=YESTERDAY so the last row is always
+            # the previous trading day's settled close. No time check needed.
+            sym_nav      = s.index[-1]
+            sym_prev_nav = s.index[-2]
+
+            price      = round(float(s.loc[sym_nav]), 2)
+            prev_price = float(s.loc[sym_prev_nav]) if sym_prev_nav in s.index else None
+            chg_1d     = round((price / prev_price - 1) * 100, 2) if prev_price else 0
+
+            sym_nav_pos = list(s.index).index(sym_nav)
+
+            def get_ret(n, _s=s, _pos=sym_nav_pos, _price=price):
+                if _pos >= n:
+                    past = float(_s.iloc[_pos - n])
+                    if past == 0 or pd.isna(past):
                         return 0
-                    return round((price / past - 1) * 100, 2)
+                    return round((_price / past - 1) * 100, 2)
                 return 0
 
             index_stats.append({
-                "symbol": sym,
-                "name": name,
-                "price": price,
-                "chg_1d": chg_1d,
-                "chg_3m": get_ret(63),
-                "chg_6m": get_ret(126),
-                "chg_1y": get_ret(252)
+                "symbol":       sym,
+                "name":         name,
+                "price":        price,
+                "chg_1d":       chg_1d,
+                "chg_3m":       get_ret(63),
+                "chg_6m":       get_ret(126),
+                "chg_1y":       get_ret(252),
+                "as_of_date":   str(sym_nav.date()),   # Per-index actual settlement date
             })
 
 output = {
