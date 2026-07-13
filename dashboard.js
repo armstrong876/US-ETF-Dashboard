@@ -48,16 +48,16 @@ async function fetchAndRender() {
     processData();
     showLoading(false);
 
-    const today = new Promise(resolve => {
-        const d = new Date();
-        resolve(d.toISOString().split('T')[0]);
-    });
-    const currentDay = await today;
-    const isUpToDate = DATA.as_of_date === currentDay;
+    // Data engine always uses end=TODAY (exclusive in yfinance), so data is always T-1 (yesterday).
+    // We compare against yesterday's date — if as_of_date matches yesterday, the dashboard is current.
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const isUpToDate = DATA.as_of_date >= yesterdayStr;
 
     if (DATA) {
       if (isUpToDate) {
-        showToast('Dashboard is up to date with today\'s market figures.', 'success');
+        showToast('Dashboard is up to date. Data as of ' + DATA.as_of_date + '.', 'success');
       } else {
         showToast('Data shown is from ' + DATA.as_of_date + '. Next auto-update: 7:00 AM IST.', 'info');
       }
