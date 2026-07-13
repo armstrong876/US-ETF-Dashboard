@@ -338,6 +338,66 @@
 
 </main>
 
+<!-- ═══════════════════════ INDEX CHART MODAL ═══════════════════════════ -->
+<div class="index-modal-overlay" id="indexChartModal" style="display: none;" onclick="handleIndexModalOverlayClick(event)">
+  <div class="index-modal-card">
+    <div class="index-modal-header">
+      <div class="index-modal-title-group">
+        <h3 id="indexModalTitle">Index Price Chart</h3>
+        <p id="indexModalSubtitle">Daily closing price — click another index badge to compare</p>
+      </div>
+      <button class="index-modal-close" onclick="closeIndexModal()" title="Close (Esc)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    
+    <div class="index-modal-body">
+      <!-- Timeframe row -->
+      <div class="index-tf-row">
+        <div class="index-tf-pills">
+          <button class="index-tf-btn" id="idx-tf-1M" onclick="setIndexTimeframe('1M')">1M</button>
+          <button class="index-tf-btn" id="idx-tf-3M" onclick="setIndexTimeframe('3M')">3M</button>
+          <button class="index-tf-btn" id="idx-tf-6M" onclick="setIndexTimeframe('6M')">6M</button>
+          <button class="index-tf-btn active" id="idx-tf-1Y" onclick="setIndexTimeframe('1Y')">1Y</button>
+          <button class="index-tf-btn" id="idx-tf-3Y" onclick="setIndexTimeframe('3Y')">3Y</button>
+          <button class="index-tf-btn" id="idx-tf-5Y" onclick="setIndexTimeframe('5Y')">5Y</button>
+          <button class="index-tf-btn" id="idx-tf-all" onclick="setIndexTimeframe('All')">All</button>
+          <button class="index-tf-btn" id="idx-tf-custom" onclick="setIndexTimeframe('Custom')">📅 Custom</button>
+        </div>
+        
+        <div class="index-custom-dates" id="indexCustomDates" style="display: none;">
+          <span class="index-date-label">From</span>
+          <input type="date" id="indexFromDate" class="index-date-input" onchange="updateIndexChart()" />
+          <span class="index-date-label">To</span>
+          <input type="date" id="indexToDate" class="index-date-input" onchange="updateIndexChart()" />
+        </div>
+        
+        <div class="index-mode-badge" id="indexModeBadge" style="display: none;">
+          📊 Normalized Mode
+        </div>
+      </div>
+      
+      <!-- Index badges checkboxes -->
+      <div class="index-badges-container" id="indexBadgesContainer">
+        <!-- Badges will be dynamically populated here -->
+      </div>
+      
+      <!-- Chart Canvas Area -->
+      <div class="index-chart-container">
+        <canvas id="indexChartCanvas"></canvas>
+      </div>
+      
+      <!-- Footer Note -->
+      <div class="index-modal-footer" id="indexModalFooter">
+        Select another index badge above to compare (max 5). Chart switches to normalized % mode automatically.
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════ LOADING OVERLAY ═══════════════════════════ -->
 <div class="loading-overlay" id="loadingOverlay">
   <div class="loading-card">

@@ -278,8 +278,11 @@ function buildMarketCard(idx) {
   const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
   const getCl = (v) => v >= 0 ? 'green' : 'red';
   
+  const escSymbol = esc(idx.symbol);
+  const escName = esc(idx.name);
+  
   return `
-    <div class="market-card">
+    <div class="market-card" onclick="openIndexModal('${escSymbol}', '${escName}')" title="Click to view historical chart for ${escName}">
       <div class="market-name">${idx.name}</div>
       <div class="market-price-row">
         <span class="market-price">${idx.price.toLocaleString()}</span>
@@ -899,7 +902,10 @@ function toggleTheme() {
   const isLight = document.body.classList.toggle('light-theme');
   localStorage.setItem('dashboard_theme', isLight ? 'light' : 'dark');
   updateThemeButton(isLight);
-  // Chart always stays white/light — no need to re-render it on theme change
+  // Re-render chart on theme change to adjust text/grid line colors
+  if (indexChart) {
+    updateIndexChart();
+  }
 }
 
 function updateThemeButton(isLight) {
@@ -911,6 +917,387 @@ function updateThemeButton(isLight) {
 
 // Call theme initialization on load
 initTheme();
+
+// ── INDEX CHART MODAL LOGIC ──────────────────────────────────────────────────
+let INDEX_CHART_TIMEFRAME = '1Y';
+let SELECTED_INDICES = [];
+let indexChart = null;
+
+const INDEX_META = {
+  '^GSPC': { color: '#38bdf8', gradientStart: 'rgba(56, 189, 248, 0.35)', gradientEnd: 'rgba(56, 189, 248, 0.01)' },
+  '^NDX': { color: '#22d3ee', gradientStart: 'rgba(34, 211, 238, 0.35)', gradientEnd: 'rgba(34, 211, 238, 0.01)' },
+  '^DJI': { color: '#f472b6', gradientStart: 'rgba(244, 114, 182, 0.35)', gradientEnd: 'rgba(244, 114, 182, 0.01)' },
+  '^FTSE': { color: '#fb923c', gradientStart: 'rgba(251, 146, 60, 0.35)', gradientEnd: 'rgba(251, 146, 60, 0.01)' },
+  '^RUT': { color: '#c084fc', gradientStart: 'rgba(192, 132, 252, 0.35)', gradientEnd: 'rgba(192, 132, 252, 0.01)' },
+  '000001.SS': { color: '#f87171', gradientStart: 'rgba(248, 113, 113, 0.35)', gradientEnd: 'rgba(248, 113, 113, 0.01)' },
+  '^NSEI': { color: '#34d399', gradientStart: 'rgba(52, 211, 153, 0.35)', gradientEnd: 'rgba(52, 211, 153, 0.01)' },
+  '^CRSLDX': { color: '#60a5fa', gradientStart: 'rgba(96, 165, 250, 0.35)', gradientEnd: 'rgba(96, 165, 250, 0.01)' },
+  '^VIX': { color: '#fb7185', gradientStart: 'rgba(251, 113, 133, 0.35)', gradientEnd: 'rgba(251, 113, 133, 0.01)' },
+  '^BSESN': { color: '#a78bfa', gradientStart: 'rgba(167, 139, 250, 0.35)', gradientEnd: 'rgba(167, 139, 250, 0.01)' }
+};
+
+const COMPARE_COLORS = [
+  '#22d3ee', // Cyan
+  '#f472b6', // Pink
+  '#34d399', // Emerald Green
+  '#fb923c', // Orange
+  '#c084fc', // Purple
+  '#f87171'  // Red
+];
+
+// Open the index details / comparison modal
+async function openIndexModal(symbol, name) {
+  SELECTED_INDICES = [symbol];
+  INDEX_CHART_TIMEFRAME = '1Y';
+  
+  // Highlight active timeframe button and hide custom range controls
+  document.querySelectorAll('.index-tf-btn').forEach(btn => btn.classList.remove('active'));
+  const activeBtn = document.getElementById('idx-tf-1Y');
+  if (activeBtn) activeBtn.classList.add('active');
+  
+  const customDatesDiv = document.getElementById('indexCustomDates');
+  if (customDatesDiv) customDatesDiv.style.display = 'none';
+
+  const modal = document.getElementById('indexChartModal');
+  if (modal) modal.style.display = 'flex';
+
+  // Render index selection checkboxes/badges
+  renderIndexBadges();
+
+  // Load and draw chart
+  updateIndexChart();
+}
+
+// Close the modal
+function closeIndexModal() {
+  const modal = document.getElementById('indexChartModal');
+  if (modal) modal.style.display = 'none';
+  if (indexChart) {
+    indexChart.destroy();
+    indexChart = null;
+  }
+}
+
+// Close when clicking overlay wrapper
+function handleIndexModalOverlayClick(e) {
+  if (e.target.id === 'indexChartModal') {
+    closeIndexModal();
+  }
+}
+
+// Esc key listener
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeIndexModal();
+  }
+});
+
+// Render list of index checkboxes at the top of the modal body
+function renderIndexBadges() {
+  const container = document.getElementById('indexBadgesContainer');
+  if (!container || !DATA || !DATA.market_indices) return;
+
+  const isLight = document.body.classList.contains('light-theme');
+  const borderCol = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.07)';
+
+  container.innerHTML = DATA.market_indices.map(idx => {
+    const isChecked = SELECTED_INDICES.includes(idx.symbol);
+    const meta = INDEX_META[idx.symbol] || { color: '#888888' };
+    const color = meta.color;
+    
+    // Style settings for active vs inactive index badges
+    const styleAttr = isChecked 
+      ? `border-color: ${color}; background: ${color}1a; color: ${color}; font-weight: 600;`
+      : `border-color: ${borderCol}; background: var(--bg-elevated); color: var(--text-secondary);`;
+      
+    const dotStyle = isChecked
+      ? `background: ${color}; box-shadow: 0 0 6px ${color};`
+      : `background: var(--text-muted);`;
+
+    const isDisabled = !isChecked && SELECTED_INDICES.length >= 5;
+
+    return `
+      <button class="index-badge-btn" 
+              onclick="toggleCompareIndex('${esc(idx.symbol)}')" 
+              style="${styleAttr}"
+              ${isDisabled ? 'disabled' : ''}
+              title="${isDisabled ? 'Max 5 indices can be compared' : 'Compare with ' + esc(idx.name)}">
+        <span class="index-badge-dot" style="${dotStyle}"></span>
+        ${esc(idx.name)}
+      </button>
+    `;
+  }).join('');
+}
+
+// Toggle selection state of index for comparison
+function toggleCompareIndex(symbol) {
+  const index = SELECTED_INDICES.indexOf(symbol);
+  if (index !== -1) {
+    if (SELECTED_INDICES.length === 1) return; // Must keep at least one index selected
+    SELECTED_INDICES.splice(index, 1);
+  } else {
+    if (SELECTED_INDICES.length >= 5) return;
+    SELECTED_INDICES.push(symbol);
+  }
+  
+  renderIndexBadges();
+  updateIndexChart();
+}
+
+// Handle period picker pill click
+async function setIndexTimeframe(tf) {
+  INDEX_CHART_TIMEFRAME = tf;
+
+  document.querySelectorAll('.index-tf-btn').forEach(btn => btn.classList.remove('active'));
+  const activeBtn = document.getElementById(`idx-tf-${tf}`);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  const customDatesDiv = document.getElementById('indexCustomDates');
+  if (tf === 'Custom') {
+    customDatesDiv.style.display = 'flex';
+    const hist = await loadHistData();
+    if (hist && hist.dates.length > 0) {
+      const lastDate = hist.dates[hist.dates.length - 1];
+      const fromInput = document.getElementById('indexFromDate');
+      const toInput = document.getElementById('indexToDate');
+      
+      const defaultFrom = new Date(new Date(lastDate).getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      
+      fromInput.value = fromInput.value || defaultFrom;
+      toInput.value = toInput.value || lastDate;
+      fromInput.min = hist.dates[0];
+      fromInput.max = lastDate;
+      toInput.min = hist.dates[0];
+      toInput.max = lastDate;
+    }
+  } else {
+    customDatesDiv.style.display = 'none';
+  }
+
+  updateIndexChart();
+}
+
+// Core drawing routine for Index Chart Modal
+async function updateIndexChart() {
+  const modalFooter = document.getElementById('indexModalFooter');
+  
+  if (indexChart) {
+    indexChart.destroy();
+    indexChart = null;
+  }
+
+  const hist = await loadHistData();
+  if (!hist) {
+    modalFooter.innerHTML = '<span style="color:var(--red)">⚠️ Error: History price data is not loaded.</span>';
+    return;
+  }
+
+  // Slicing parameters
+  const dates = hist.dates;
+  let startIdx = 0;
+  let endIdx = dates.length - 1;
+
+  if (INDEX_CHART_TIMEFRAME === 'Custom') {
+    const fromVal = document.getElementById('indexFromDate').value;
+    const toVal = document.getElementById('indexToDate').value;
+    if (fromVal) {
+      const idx = dates.findIndex(d => d >= fromVal);
+      if (idx !== -1) startIdx = idx;
+    }
+    if (toVal) {
+      let idx = -1;
+      for (let i = dates.length - 1; i >= 0; i--) {
+        if (dates[i] <= toVal) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx !== -1) endIdx = idx;
+    }
+  } else if (INDEX_CHART_TIMEFRAME !== 'All') {
+    let days = 365;
+    if (INDEX_CHART_TIMEFRAME === '1M') days = 30;
+    else if (INDEX_CHART_TIMEFRAME === '3M') days = 90;
+    else if (INDEX_CHART_TIMEFRAME === '6M') days = 180;
+    else if (INDEX_CHART_TIMEFRAME === '1Y') days = 365;
+    else if (INDEX_CHART_TIMEFRAME === '3Y') days = 3 * 365;
+    else if (INDEX_CHART_TIMEFRAME === '5Y') days = 5 * 365;
+
+    const lastDate = new Date(dates[dates.length - 1]);
+    const targetDate = new Date(lastDate.getTime() - days * 24 * 60 * 60 * 1000);
+    const targetStr = targetDate.toISOString().split('T')[0];
+
+    const idx = dates.findIndex(d => d >= targetStr);
+    if (idx !== -1) startIdx = idx;
+  }
+
+  if (startIdx >= endIdx) {
+    startIdx = Math.max(0, endIdx - 5);
+  }
+
+  const slicedLabels = dates.slice(startIdx, endIdx + 1);
+  const isComparing = SELECTED_INDICES.length > 1;
+
+  // Toggle Mode elements
+  const modeBadge = document.getElementById('indexModeBadge');
+  if (modeBadge) modeBadge.style.display = isComparing ? 'block' : 'none';
+
+  const modalTitle = document.getElementById('indexModalTitle');
+  const modalSubtitle = document.getElementById('indexModalSubtitle');
+
+  if (isComparing) {
+    modalTitle.textContent = 'Index Comparison';
+    modalSubtitle.textContent = 'Normalized % returns — select up to 5 indices above to compare';
+    modalFooter.textContent = `Normalized to 0% at ${slicedLabels[0]} for fair return comparison.`;
+  } else {
+    const symbol = SELECTED_INDICES[0];
+    const indexObj = DATA.market_indices.find(x => x.symbol === symbol) || { name: symbol };
+    modalTitle.textContent = `${indexObj.name} Chart`;
+    modalSubtitle.textContent = `Daily closing price (NAV) — click another index above to compare`;
+    modalFooter.textContent = 'Select another index badge above to compare (max 5). Chart switches to normalized % mode automatically.';
+  }
+
+  // Build datasets
+  const chartDatasets = [];
+  
+  SELECTED_INDICES.forEach((symbol, index) => {
+    const series = hist.series[symbol];
+    if (!series) return;
+
+    const rawSlice = series.slice(startIdx, endIdx + 1);
+
+    // Calculate scale factor using current settled price
+    const indexObj = DATA.market_indices.find(x => x.symbol === symbol);
+    const latestRawPrice = indexObj ? indexObj.price : 100;
+    
+    // Find last valid index in history to calculate scale factor
+    let lastValidHistVal = 100;
+    for (let i = series.length - 1; i >= 0; i--) {
+      if (series[i] !== null) {
+        lastValidHistVal = series[i];
+        break;
+      }
+    }
+    const scaleFactor = latestRawPrice / lastValidHistVal;
+
+    // Rescale values to actual raw prices
+    const rescaledSlice = rawSlice.map(val => val !== null ? val * scaleFactor : null);
+
+    let plottedData = [];
+    const meta = INDEX_META[symbol] || { color: COMPARE_COLORS[index % COMPARE_COLORS.length] };
+    const color = meta.color;
+
+    if (isComparing) {
+      // Normalise percent returns relative to the first day of timeframe
+      let baseVal = null;
+      for (let i = 0; i < rescaledSlice.length; i++) {
+        if (rescaledSlice[i] !== null && rescaledSlice[i] !== 0) {
+          baseVal = rescaledSlice[i];
+          break;
+        }
+      }
+      
+      if (baseVal === null) return;
+      plottedData = rescaledSlice.map(v => v !== null ? Number(((v / baseVal - 1) * 100).toFixed(2)) : null);
+    } else {
+      // Raw prices
+      plottedData = rescaledSlice.map(v => v !== null ? Number(v.toFixed(2)) : null);
+    }
+
+    const isLight = document.body.classList.contains('light-theme');
+
+    chartDatasets.push({
+      label: symbol === '^GSPC' ? 'S&P 500' : symbol === '^NDX' ? 'Nasdaq 100' : symbol === '^NSEI' ? 'Nifty 50' : (indexObj ? indexObj.name : symbol),
+      data: plottedData,
+      borderColor: color,
+      borderWidth: isComparing ? 2 : 2.5,
+      pointRadius: 0,
+      pointHitRadius: 10,
+      tension: 0.25,
+      fill: !isComparing,
+      backgroundColor: !isComparing ? (context => {
+        const chart = context.chart;
+        const {ctx, chartArea} = chart;
+        if (!chartArea) return null;
+        
+        const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+        gradient.addColorStop(0, meta.gradientStart || 'rgba(99, 102, 241, 0.25)');
+        gradient.addColorStop(1, meta.gradientEnd || 'rgba(99, 102, 241, 0.01)');
+        return gradient;
+      }) : 'transparent'
+    });
+  });
+
+  const isLight = document.body.classList.contains('light-theme');
+  const tickColor = isLight ? '#475569' : '#8b9ab5';
+  const gridColor = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255, 255, 255, 0.04)';
+  const tooltipBg = isLight ? '#ffffff' : '#1e293b';
+  const tooltipBorder = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)';
+  const tooltipText = isLight ? '#0f172a' : '#f8fafc';
+
+  const ctx = document.getElementById('indexChartCanvas').getContext('2d');
+  indexChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: slicedLabels, datasets: chartDatasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: isComparing,
+          labels: { color: tickColor, font: { family: 'Inter', size: 11, weight: 500 } }
+        },
+        tooltip: {
+          backgroundColor: tooltipBg,
+          borderColor: tooltipBorder,
+          borderWidth: 1,
+          titleColor: tickColor,
+          bodyColor: tooltipText,
+          padding: 10,
+          cornerRadius: 8,
+          boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+          callbacks: {
+            title: items => `📅 ${items[0].label}`,
+            label: item => {
+              const val = item.raw != null ? item.raw.toLocaleString() : '—';
+              if (isComparing) {
+                const sign = item.raw > 0 ? '+' : '';
+                return ` ${item.dataset.label}: ${sign}${val}%`;
+              }
+              return ` ${item.dataset.label}: ${val}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            maxTicksLimit: 10,
+            color: tickColor,
+            font: { family: 'JetBrains Mono', size: 10 }
+          },
+          grid: { color: gridColor }
+        },
+        y: {
+          ticks: {
+            color: tickColor,
+            font: { family: 'JetBrains Mono', size: 10 },
+            callback: v => isComparing ? (v >= 0 ? '+' : '') + v.toFixed(0) + '%' : v.toLocaleString()
+          },
+          grid: { color: gridColor },
+          title: {
+            display: true,
+            text: isComparing ? 'Return (%)' : 'Index Level (NAV)',
+            color: tickColor,
+            font: { family: 'Inter', size: 10, weight: 600 }
+          }
+        }
+      }
+    }
+  });
+}
+
 
 
 

@@ -377,10 +377,7 @@
                 <button class="login-btn" onclick="handleLogin()">LOGIN</button>
                 <div id="errorMessage" class="error-msg"></div>
 
-                <div class="footer-links">
-                    <a href="#">Forgot Password?</a>
-                    <a href="#">Member Support</a>
-                </div>
+
             </div>
         </div>
     </div>
@@ -415,7 +412,7 @@
 
             const result = Auth.login(uid, pass);
             if (result.success) {
-                window.location.href = '/';
+                window.location.href = 'index.html';
             } else {
                 err.innerText = result.message;
                 err.style.display = 'block';

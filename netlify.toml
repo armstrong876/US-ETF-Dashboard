@@ -2,16 +2,8 @@
   publish = "."
   command = ""
 
-# Root URL → serve index.html (auth.js will redirect to login.html if not logged in)
 [[redirects]]
   from = "/"
-  to = "/index.html"
-  status = 200
-  force = false
-
-# Login page stays at /login.html
-[[redirects]]
-  from = "/login"
   to = "/login.html"
   status = 200
   force = false
