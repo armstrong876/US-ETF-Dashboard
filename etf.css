@@ -55,6 +55,18 @@
   gap: 20px;
 }
 
+.etf-nav-asof {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
 .etf-nav-brand {
   display: flex;
   align-items: center;
@@ -304,6 +316,25 @@
   color: var(--text-primary);
 }
 
+.etf-h2-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Portfolio Composition "Holdings as of ..." date, on the extreme right */
+.etf-comp-asof {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
 .etf-section-desc {
   font-size: 11px;
   color: var(--text-secondary);
@@ -334,9 +365,17 @@
 
 .etf-compare-tabs {
   display: flex;
+  align-items: center;
   gap: 8px;
   justify-self: end;
   flex-wrap: wrap;
+}
+
+.etf-compare-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 @media (max-width: 760px) {
@@ -377,11 +416,11 @@
   transition: all 0.2s ease;
 }
 
+/* Active compare button — border/text color is set inline per index (matching
+   its line color); keep the background a neutral surface so that tint reads. */
 .etf-compare-btn.active {
-  background: rgba(99, 102, 241, 0.15);
-  border-color: var(--etf-accent);
-  color: var(--text-primary);
-  box-shadow: 0 0 10px var(--etf-accent-glow);
+  background: var(--bg-surface);
+  font-weight: 700;
 }
 
 .etf-custom-dates {

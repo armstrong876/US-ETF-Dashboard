@@ -22,6 +22,7 @@
     Back to Dashboard
   </button>
   <div class="etf-topnav-right">
+    <div class="etf-nav-asof" id="navAsOf">As of: —</div>
     <button id="themeToggleBtn" class="etf-theme-btn" onclick="toggleEtfTheme()">☀️ Light Mode</button>
     <div class="etf-nav-brand">
       <img src="armstrong_logo.jpg" alt="Armstrong Capital" />
@@ -105,8 +106,11 @@
           <button class="etf-tf-btn" data-tf="custom" onclick="setEtfTf('custom')">📅 Custom</button>
         </div>
         <div class="etf-compare-tabs" id="etfCompareTabs">
-          <button class="etf-compare-btn" id="compareSpyBtn" onclick="setCompareBenchmark('SPY')">⚖️ vs S&amp;P 500</button>
-          <button class="etf-compare-btn" id="compareNdxBtn" onclick="setCompareBenchmark('NDX')">⚖️ vs Nasdaq-100</button>
+          <span class="etf-compare-lbl">⚖️ Compare:</span>
+          <button class="etf-compare-btn" data-idx="SPY" onclick="toggleCompareIndex('SPY')">S&amp;P 500</button>
+          <button class="etf-compare-btn" data-idx="NDX" onclick="toggleCompareIndex('NDX')">Nasdaq-100</button>
+          <button class="etf-compare-btn" data-idx="NIFTY50" onclick="toggleCompareIndex('NIFTY50')">Nifty 50</button>
+          <button class="etf-compare-btn" data-idx="NIFTY500" onclick="toggleCompareIndex('NIFTY500')">Nifty 500</button>
         </div>
       </div>
     </div>
@@ -129,7 +133,7 @@
         <span class="etf-section-icon">📊</span>
         <h2>Returns vs Benchmarks</h2>
       </div>
-      <p class="etf-section-desc">Trailing returns vs S&amp;P 500 (SPY) &amp; Nasdaq-100 (^NDX) benchmarks</p>
+      <p class="etf-section-desc">Trailing returns vs S&amp;P 500 (SPY) &amp; Nasdaq-100 (^NDX) benchmarks &nbsp;·&nbsp; <strong>Periods above 1 year are annualized (CAGR)</strong></p>
     </div>
     <div class="etf-table-wrap">
       <table class="etf-returns-table">
@@ -155,6 +159,7 @@
         <span class="etf-section-icon">🥧</span>
         <h2>Portfolio Composition</h2>
       </div>
+      <span class="etf-comp-asof" id="compositionAsOf"></span>
     </div>
 
     <div class="etf-na-msg" id="compositionNA" style="display:none;">
@@ -245,7 +250,7 @@
     <div class="etf-section-header">
       <div class="etf-section-title">
         <span class="etf-section-icon">🗓️</span>
-        <h2>Monthly Returns</h2>
+        <h2>Seasonality Analysis <span class="etf-h2-sub">(Monthly Returns)</span></h2>
       </div>
       <p class="etf-section-desc" id="monthlyReturnsDesc">Calendar-year monthly returns of this ETF</p>
     </div>

@@ -7,10 +7,10 @@ Computes, for the individual ETF profile page (etf.html) only:
   3. Risk Analysis suite (Std Dev, Sharpe, Sortino, Beta, Alpha, Max Drawdown +
      Recovery, Upside/Downside Capture, Composite Score) vs a matched US benchmark
 
-Data source: history.json's existing daily adjusted-close series — the SAME
-series data_engine.py already produces and the price chart already reads.
-No new price fetching. The only external call here is the US 3-Month T-Bill
-yield (^IRX), needed as the risk-free rate input.
+Data source: the nav_core_adj.parquet cache (raw adjusted/total-return close)
+that data_engine.py produces — the single source of truth for all NAV/return
+math (history.json is only a fallback). No new price fetching. The only
+external call here is the US 3-Month T-Bill yield (^IRX) for the risk-free rate.
 
 Scope: SYMBOLS below (QQQ, SMH for now). Add tickers to extend — nothing else
 to change. Does NOT read or write dashboard.json / history.json / any file the
@@ -27,6 +27,11 @@ import pandas as pd
 import yfinance as yf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Primary NAV source = the version-robust Parquet cache (raw adjusted/total-return
+# close), so every return, seasonality and risk figure on the ETF page is computed
+# from the same single source of truth. history.json is only a fallback (it is
+# itself derived from this Parquet, just normalized — ratio math is identical).
+NAV_PARQUET = os.path.join(BASE_DIR, "nav_core_adj.parquet")
 HISTORY  = os.path.join(BASE_DIR, "history.json")
 OUTPUT   = os.path.join(BASE_DIR, "etf_analytics.json")
 
@@ -52,10 +57,22 @@ MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov",
 
 
 def load_history():
+    """Load daily adjusted NAVs. Prefers the Parquet cache (canonical, full
+    precision); falls back to history.json if the Parquet isn't present."""
+    if os.path.exists(NAV_PARQUET):
+        try:
+            df = pd.read_parquet(NAV_PARQUET)
+            df.index = pd.to_datetime(df.index)
+            print(f"  NAV source: {os.path.basename(NAV_PARQUET)} "
+                  f"({df.shape[0]} rows x {df.shape[1]} tickers)")
+            return df
+        except Exception as e:
+            print(f"  Parquet read failed ({e}); falling back to history.json")
     with open(HISTORY) as f:
         h = json.load(f)
     dates = pd.to_datetime(h["dates"])
     df = pd.DataFrame(h["series"], index=dates)
+    print(f"  NAV source: history.json ({df.shape[0]} rows x {df.shape[1]} tickers)")
     return df
 
 

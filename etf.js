@@ -21,9 +21,12 @@ let captureChart = null;
 let drawdownChart = null;
 
 let chartTimeframe = '1Y'; // default
-let compareBenchmark = null; // null | 'SPY' | 'NDX'
-const BENCHMARK_SERIES_KEY = { 'SPY': 'SPY', 'NDX': '^NDX' };
-const BENCHMARK_LABEL = { 'SPY': 'S&P 500', 'NDX': 'Nasdaq-100' };
+// Multi-select index comparison — any combination can be active at once.
+const compareBenchmarks = new Set();
+const BENCHMARK_SERIES_KEY = { 'SPY': 'SPY', 'NDX': '^NDX', 'NIFTY50': '^NSEI', 'NIFTY500': '^CRSLDX' };
+const BENCHMARK_LABEL = { 'SPY': 'S&P 500', 'NDX': 'Nasdaq-100', 'NIFTY50': 'Nifty 50', 'NIFTY500': 'Nifty 500' };
+const BENCHMARK_COLOR = { 'SPY': '#ef4444', 'NDX': '#f59e0b', 'NIFTY50': '#8b5cf6', 'NIFTY500': '#14b8a6' };
+const BENCHMARK_ORDER = ['SPY', 'NDX', 'NIFTY50', 'NIFTY500'];
 
 // Periods definitions
 const ALL_PERIODS = ['1W', '15D', '1M', '2M', '3M', '6M', '9M', '12M', '2Y', '3Y', '5Y', '7Y', '10Y'];
@@ -190,6 +193,10 @@ function findAndProcessEtf() {
 
   // Set Title tab
   document.title = `${etfObj.symbol} Profile | Armstrong Capital`;
+
+  // "As of" date in the top nav — same source as the main dashboard (dashboard.json)
+  const navAsOf = document.getElementById('navAsOf');
+  if (navAsOf) navAsOf.textContent = 'As of: ' + (mainData.as_of_date || '—');
 
   // Populate structural contents
   populateHero();
@@ -380,6 +387,11 @@ function populateComposition() {
   grid.style.display = 'grid';
   naMsg.style.display = 'none';
 
+  // "As of" date for holdings — shown month-end (ETF holdings are conventionally
+  // reported as of month-end). Derived from the composition data's last_updated.
+  const compAsOf = document.getElementById('compositionAsOf');
+  if (compAsOf) compAsOf.textContent = 'Holdings as of ' + lastMonthEndLabel(meta.last_updated);
+
   // Render donut legends (Sector / Country — many categories, donut is the
   // right form here since no single slice dominates the way market-cap does)
   renderDonutLegend('sectorLegend', meta.sector_holdings, 'sector');
@@ -466,6 +478,18 @@ function hhiNote(hhi) {
   if (hhi < 1500) return 'Diversified';
   if (hhi < 2500) return 'Moderately concentrated';
   return 'Highly concentrated';
+}
+
+// Most recent completed month-end on/before the given date, formatted like
+// "June 30, 2026" (ETF holdings are conventionally reported as of month-end).
+function lastMonthEndLabel(dateStr) {
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December'];
+  let d = dateStr ? new Date(String(dateStr).replace(' ', 'T')) : new Date();
+  if (isNaN(d.getTime())) d = new Date();
+  // Day 0 of the current month = the last day of the previous month
+  const monthEnd = new Date(d.getFullYear(), d.getMonth(), 0);
+  return MONTHS[monthEnd.getMonth()] + ' ' + monthEnd.getDate() + ', ' + monthEnd.getFullYear();
 }
 
 function renderDonutLegend(elementId, items, keyName) {
@@ -598,30 +622,36 @@ function renderPriceChart() {
 
   // Datasets
   const datasets = [];
+  const compareOn = compareBenchmarks.size > 0;
 
-  if (compareBenchmark) {
-    // Normalized compare mode (%)
+  if (compareOn) {
+    // Normalized compare mode (%): ETF line + one line per selected index
     datasets.push({
       label: `${symbol} Return (%)`,
       data: timeline.etfPct,
       borderColor: accentColor,
-      borderWidth: 2,
+      borderWidth: 2.5,
       pointRadius: 0,
       pointHoverRadius: 5,
       tension: 0.1,
       fill: false
     });
 
-    datasets.push({
-      label: `${BENCHMARK_LABEL[compareBenchmark]} Return (%)`,
-      data: timeline.benchPct,
-      borderColor: '#ef4444', // Red for benchmark comparison
-      borderWidth: 1.5,
-      borderDash: [5, 5],
-      pointRadius: 0,
-      pointHoverRadius: 4,
-      tension: 0.1,
-      fill: false
+    BENCHMARK_ORDER.forEach(key => {
+      if (!compareBenchmarks.has(key)) return;
+      const series = timeline.benchPct[key];
+      if (!series) return;
+      datasets.push({
+        label: `${BENCHMARK_LABEL[key]} (%)`,
+        data: series,
+        borderColor: BENCHMARK_COLOR[key],
+        borderWidth: 1.5,
+        borderDash: [5, 4],
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.1,
+        fill: false
+      });
     });
   } else {
     // Normal NAV Price mode ($)
@@ -679,7 +709,7 @@ function renderPriceChart() {
               let label = context.dataset.label || '';
               if (label) label += ': ';
               if (context.parsed.y !== null) {
-                label += compareBenchmark
+                label += compareOn
                   ? context.parsed.y.toFixed(2) + '%'
                   : '$' + context.parsed.y.toFixed(2);
               }
@@ -703,7 +733,7 @@ function renderPriceChart() {
             color: fontColor,
             font: { family: 'JetBrains Mono', size: 9 },
             callback: function(val) {
-              return compareBenchmark ? val.toFixed(1) + '%' : '$' + val.toFixed(1);
+              return compareOn ? val.toFixed(1) + '%' : '$' + val.toFixed(1);
             }
           }
         }
@@ -714,9 +744,12 @@ function renderPriceChart() {
   // Update Footer subtitle
   const ft = document.getElementById('priceChartFooter');
   if (ft) {
-    ft.textContent = compareBenchmark
-      ? `Normalized returns (%) starting at 0.00% on date ${timeline.labels[0]}, vs ${BENCHMARK_LABEL[compareBenchmark]}.`
-      : `Daily adjusted closing levels ($) from ${timeline.labels[0]} to ${timeline.labels[timeline.labels.length - 1]}.`;
+    if (compareOn) {
+      const names = BENCHMARK_ORDER.filter(k => compareBenchmarks.has(k)).map(k => BENCHMARK_LABEL[k]).join(', ');
+      ft.textContent = `Normalized total return (%) from 0.00% on ${timeline.labels[0]}, vs ${names}.`;
+    } else {
+      ft.textContent = `Daily adjusted closing levels ($) from ${timeline.labels[0]} to ${timeline.labels[timeline.labels.length - 1]}.`;
+    }
   }
 }
 
@@ -726,8 +759,6 @@ function getPriceChartData() {
 
   const dates = historyData.dates;
   const etfNorm = historyData.series[symbol];
-  const benchKey = compareBenchmark ? BENCHMARK_SERIES_KEY[compareBenchmark] : null;
-  const benchNorm = benchKey ? historyData.series[benchKey] : null;
 
   if (!etfNorm) return null;
 
@@ -771,7 +802,6 @@ function getPriceChartData() {
   // Slice arrays
   const slicedDates = dates.slice(startIndex);
   const slicedEtfNorm = etfNorm.slice(startIndex);
-  const slicedBenchNorm = benchNorm ? benchNorm.slice(startIndex) : null;
 
   // Build raw dollars arrays
   const etfRaw = slicedEtfNorm.map(v => v * scaleFactor);
@@ -780,11 +810,18 @@ function getPriceChartData() {
   const etfStartVal = etfRaw[0];
   const etfPct = etfRaw.map(v => ((v / etfStartVal) - 1) * 100);
 
-  let benchPct = [];
-  if (slicedBenchNorm) {
-    const benchStartVal = slicedBenchNorm[0];
-    benchPct = slicedBenchNorm.map(v => ((v / benchStartVal) - 1) * 100);
-  }
+  // Normalized % return for each SELECTED benchmark index, keyed by button id
+  const benchPct = {};
+  compareBenchmarks.forEach(key => {
+    const seriesKey = BENCHMARK_SERIES_KEY[key];
+    const raw = seriesKey ? historyData.series[seriesKey] : null;
+    if (!raw) return;
+    const sliced = raw.slice(startIndex);
+    // find first non-null base so a benchmark with a later start still normalizes
+    const base = sliced.find(v => v != null && v > 0);
+    if (base == null) return;
+    benchPct[key] = sliced.map(v => (v != null ? ((v / base) - 1) * 100 : null));
+  });
 
   return {
     labels: slicedDates,
@@ -1304,15 +1341,24 @@ window.setEtfTf = function(tf) {
   }
 };
 
-// Toggle S&P 500 / Nasdaq-100 comparison tabs — clicking the active one turns it off
-window.setCompareBenchmark = function(bench) {
-  compareBenchmark = (compareBenchmark === bench) ? null : bench;
+// Toggle an index into/out of the multi-select comparison. Any combination
+// (S&P 500, Nasdaq-100, Nifty 50, Nifty 500) can be active at the same time.
+window.toggleCompareIndex = function(key) {
+  if (compareBenchmarks.has(key)) compareBenchmarks.delete(key);
+  else compareBenchmarks.add(key);
 
-  const spyBtn = document.getElementById('compareSpyBtn');
-  const ndxBtn = document.getElementById('compareNdxBtn');
-  if (spyBtn) spyBtn.classList.toggle('active', compareBenchmark === 'SPY');
-  if (ndxBtn) ndxBtn.classList.toggle('active', compareBenchmark === 'NDX');
-
+  const btn = document.querySelector(`.etf-compare-btn[data-idx="${key}"]`);
+  if (btn) {
+    btn.classList.toggle('active', compareBenchmarks.has(key));
+    if (compareBenchmarks.has(key)) {
+      // tint the active button with that index's line color for a clear legend link
+      btn.style.borderColor = BENCHMARK_COLOR[key];
+      btn.style.color = BENCHMARK_COLOR[key];
+    } else {
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }
+  }
   renderPriceChart();
 };
 
