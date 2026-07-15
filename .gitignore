@@ -18,3 +18,7 @@ git_installer.exe
 
 # Development Folder (Ignored until ready)
 US ETF Portfolio Dashboard/
+
+# Retired pickle caches — replaced by version-robust Parquet (nav_*.parquet).
+# Ignored so the corrupt/stale local copies never get re-committed.
+*.pkl.gz

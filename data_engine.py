@@ -9,7 +9,7 @@ Run:  python data_engine.py
 Output: dashboard.json  (refreshed every run)
 """
 
-import json, os, math, time
+import json, os, math, time, sys
 from datetime import datetime, date
 import yfinance as yf
 import pandas as pd
@@ -20,8 +20,16 @@ ETF_LIST   = os.path.join(BASE_DIR, "etf_list.json")
 OUTPUT     = os.path.join(BASE_DIR, "dashboard.json")
 HISTORY    = os.path.join(BASE_DIR, "history.json")
 BENCHMARK  = "SPY"
-CACHE_RAW  = os.path.join(BASE_DIR, "cache_raw.pkl.gz")
-CACHE_ADJ  = os.path.join(BASE_DIR, "cache_adj.pkl.gz")
+# Parquet cache (replaced the old *.pkl.gz pickles — pickle serialized numpy
+# internals and broke across numpy versions, e.g. a numpy-2.x CI run writing a
+# cache a numpy-1.x machine couldn't read. Parquet is a stable, portable,
+# columnar format with no such version coupling.)
+CACHE_RAW  = os.path.join(BASE_DIR, "nav_core_raw.parquet")
+CACHE_ADJ  = os.path.join(BASE_DIR, "nav_core_adj.parquet")
+# Legacy pickle paths — only read once, to migrate an existing cache to Parquet
+# on the first run after this change (best-effort; ignored if unreadable).
+LEGACY_CACHE_RAW = os.path.join(BASE_DIR, "cache_raw.pkl.gz")
+LEGACY_CACHE_ADJ = os.path.join(BASE_DIR, "cache_adj.pkl.gz")
 
 PERIODS = {            # label : trading-day lookback
     "1W":  5,
@@ -90,13 +98,25 @@ close_adj = pd.DataFrame()
 cache_loaded = False
 if os.path.exists(CACHE_RAW) and os.path.exists(CACHE_ADJ):
     try:
-        close_raw = pd.read_pickle(CACHE_RAW, compression='gzip')
-        close_adj = pd.read_pickle(CACHE_ADJ, compression='gzip')
+        close_raw = pd.read_parquet(CACHE_RAW)
+        close_adj = pd.read_parquet(CACHE_ADJ)
         if not close_raw.empty and not close_adj.empty:
             cache_loaded = True
-            print(f"[{datetime.now():%H:%M:%S}] Cache loaded successfully. Last date in cache: {close_raw.index[-1].date()}")
+            print(f"[{datetime.now():%H:%M:%S}] Parquet cache loaded. Last date in cache: {close_raw.index[-1].date()}")
     except Exception as e:
-        print(f"[{datetime.now():%H:%M:%S}] Cache read error, starting fresh: {e}")
+        print(f"[{datetime.now():%H:%M:%S}] Parquet cache read error, starting fresh: {e}")
+
+# One-time migration: if no Parquet cache yet but an old pickle cache exists and
+# is readable in this environment, convert it so we skip a heavy cold re-download.
+if not cache_loaded and os.path.exists(LEGACY_CACHE_RAW) and os.path.exists(LEGACY_CACHE_ADJ):
+    try:
+        close_raw = pd.read_pickle(LEGACY_CACHE_RAW, compression='gzip')
+        close_adj = pd.read_pickle(LEGACY_CACHE_ADJ, compression='gzip')
+        if not close_raw.empty and not close_adj.empty:
+            cache_loaded = True
+            print(f"[{datetime.now():%H:%M:%S}] Migrated legacy pickle cache -> Parquet (last date: {close_raw.index[-1].date()}).")
+    except Exception as e:
+        print(f"[{datetime.now():%H:%M:%S}] Legacy pickle unreadable ({e}); will cold-start fresh.")
 
 # ── Self-healing: Fetch full history for newly added tickers ──────────────────
 if cache_loaded:
@@ -190,22 +210,35 @@ if cache_loaded:
 
 else:
     # Cold start: Full 11-year download — end=TODAY (exclusive) caps at yesterday
+    # Wrapped in retry/backoff: this single big call has no fallback batches like
+    # the incremental path does, so a transient Yahoo rate-limit here used to crash
+    # the whole run outright (this is what caused the multi-week failure streak).
     YESTERDAY = date.today().strftime("%Y-%m-%d")
     print(f"[{datetime.now():%H:%M:%S}] Fetching full 11-year history from Yahoo Finance (capped at {YESTERDAY})...")
-    raw = yf.download(
-        tickers,
-        start=(date.today() - pd.DateOffset(years=11)).strftime("%Y-%m-%d"),
-        end=YESTERDAY,
-        interval="1d",
-        auto_adjust=False,
-        progress=True,
-        threads=True,
-    )
-    
+
+    raw = pd.DataFrame()
+    for attempt in range(3):
+        try:
+            raw = yf.download(
+                tickers,
+                start=(date.today() - pd.DateOffset(years=11)).strftime("%Y-%m-%d"),
+                end=YESTERDAY,
+                interval="1d",
+                auto_adjust=False,
+                progress=True,
+                threads=True,
+            )
+            if not raw.empty:
+                break
+            print(f"[{datetime.now():%H:%M:%S}] Cold-start download returned empty (attempt {attempt+1}/3), retrying...")
+        except Exception as e:
+            print(f"[{datetime.now():%H:%M:%S}] Cold-start download failed (attempt {attempt+1}/3): {e}")
+        time.sleep(15 * (attempt + 1))
+
     if isinstance(raw.columns, pd.MultiIndex):
         close_raw = raw["Close"]
         close_adj = raw.get("Adj Close", raw["Close"])
-    else:
+    elif not raw.empty:
         close_raw = raw[["Close"]]
         close_raw.columns = tickers
         close_adj = raw.get("Adj Close", close_raw)
@@ -216,6 +249,34 @@ else:
     close_adj = close_adj.dropna(how="all")
     close_adj.index = pd.to_datetime(close_adj.index)
 
+# ── Sanity check BEFORE touching disk or generating anything ──────────────────
+# If Yahoo rate-limited/failed and we ended up with empty or badly incomplete
+# data, stop here — never overwrite a good cache (or dashboard.json/history.json)
+# with a broken one. This is what silently corrupted the cache previously and
+# caused a multi-day cascade of failed runs (every subsequent run re-read the
+# now-empty cache and fell back into this same fragile cold-start path).
+MIN_ROWS = 100          # ~5 months of trading days — far below any real scenario
+MIN_TICKER_COVERAGE = 0.5  # at least half the expected tickers must have data
+
+if close_raw.empty or close_adj.empty:
+    print(f"[{datetime.now():%H:%M:%S}] FATAL: fetched price data is empty — "
+          f"likely a Yahoo Finance rate-limit or outage. Leaving the existing "
+          f"cache/dashboard files untouched and failing this run.")
+    sys.exit(1)
+
+if len(close_raw) < MIN_ROWS or len(close_adj) < MIN_ROWS:
+    print(f"[{datetime.now():%H:%M:%S}] FATAL: fetched price data has only "
+          f"{len(close_raw)} rows (expected >= {MIN_ROWS}). Leaving the existing "
+          f"cache/dashboard files untouched and failing this run.")
+    sys.exit(1)
+
+coverage = len(set(close_raw.columns) & set(tickers)) / max(len(tickers), 1)
+if coverage < MIN_TICKER_COVERAGE:
+    print(f"[{datetime.now():%H:%M:%S}] FATAL: only {coverage:.0%} of expected "
+          f"tickers have data (expected >= {MIN_TICKER_COVERAGE:.0%}). Leaving "
+          f"the existing cache/dashboard files untouched and failing this run.")
+    sys.exit(1)
+
 # ── Bound Cache & Save ────────────────────────────────────────────────────────
 # Limit history to the last 11 years to prevent memory leaks/unbounded growth
 eleven_years_ago = datetime.now() - pd.DateOffset(years=11)
@@ -223,9 +284,9 @@ close_raw = close_raw.loc[close_raw.index >= eleven_years_ago]
 close_adj = close_adj.loc[close_adj.index >= eleven_years_ago]
 
 try:
-    close_raw.to_pickle(CACHE_RAW, compression='gzip')
-    close_adj.to_pickle(CACHE_ADJ, compression='gzip')
-    print(f"[{datetime.now():%H:%M:%S}] Caches updated and saved to disk.")
+    close_raw.to_parquet(CACHE_RAW, compression='zstd')
+    close_adj.to_parquet(CACHE_ADJ, compression='zstd')
+    print(f"[{datetime.now():%H:%M:%S}] Parquet caches updated and saved to disk.")
 except Exception as e:
     print(f"[{datetime.now():%H:%M:%S}] Cache write error: {e}")
 

@@ -8,7 +8,7 @@ Run:  python data_engine_all.py
 Output: dashboard_all.json
 """
 
-import json, os, time
+import json, os, time, sys
 from datetime import datetime
 import yfinance as yf
 import pandas as pd
@@ -17,8 +17,11 @@ BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 ETF_LIST   = os.path.join(BASE_DIR, "etf_list_all.json")
 OUTPUT     = os.path.join(BASE_DIR, "dashboard_all.json")
 BENCHMARK  = "SPY"
-CACHE_RAW  = os.path.join(BASE_DIR, "cache_raw_all.pkl.gz")
-CACHE_ADJ  = os.path.join(BASE_DIR, "cache_adj_all.pkl.gz")
+# Parquet cache (replaced *.pkl.gz — see data_engine.py note on numpy/pickle fragility)
+CACHE_RAW  = os.path.join(BASE_DIR, "nav_all_raw.parquet")
+CACHE_ADJ  = os.path.join(BASE_DIR, "nav_all_adj.parquet")
+LEGACY_CACHE_RAW = os.path.join(BASE_DIR, "cache_raw_all.pkl.gz")
+LEGACY_CACHE_ADJ = os.path.join(BASE_DIR, "cache_adj_all.pkl.gz")
 
 PERIODS = {
     "1W":  5, "15D": 15, "1M":  21, "2M":  42, "3M":  63,
@@ -121,13 +124,24 @@ close_adj = pd.DataFrame()
 cache_loaded = False
 if os.path.exists(CACHE_RAW) and os.path.exists(CACHE_ADJ):
     try:
-        close_raw = pd.read_pickle(CACHE_RAW, compression='gzip')
-        close_adj = pd.read_pickle(CACHE_ADJ, compression='gzip')
+        close_raw = pd.read_parquet(CACHE_RAW)
+        close_adj = pd.read_parquet(CACHE_ADJ)
         if not close_raw.empty and not close_adj.empty:
             cache_loaded = True
-            print(f"[{datetime.now():%H:%M:%S}] Cache loaded successfully. Last date in cache: {close_raw.index[-1].date()}")
+            print(f"[{datetime.now():%H:%M:%S}] Parquet cache loaded. Last date in cache: {close_raw.index[-1].date()}")
     except Exception as e:
-        print(f"[{datetime.now():%H:%M:%S}] Cache read error, starting fresh: {e}")
+        print(f"[{datetime.now():%H:%M:%S}] Parquet cache read error, starting fresh: {e}")
+
+# One-time migration from a readable legacy pickle cache (best-effort).
+if not cache_loaded and os.path.exists(LEGACY_CACHE_RAW) and os.path.exists(LEGACY_CACHE_ADJ):
+    try:
+        close_raw = pd.read_pickle(LEGACY_CACHE_RAW, compression='gzip')
+        close_adj = pd.read_pickle(LEGACY_CACHE_ADJ, compression='gzip')
+        if not close_raw.empty and not close_adj.empty:
+            cache_loaded = True
+            print(f"[{datetime.now():%H:%M:%S}] Migrated legacy pickle cache -> Parquet (last date: {close_raw.index[-1].date()}).")
+    except Exception as e:
+        print(f"[{datetime.now():%H:%M:%S}] Legacy pickle unreadable ({e}); will cold-start fresh.")
 
 # ── Self-healing: Fetch full history for newly added tickers ──────────────────
 if cache_loaded:
@@ -204,6 +218,32 @@ else:
          "end": YESTERDAY, "interval": "1d", "auto_adjust": False}
     )
 
+# ── Sanity check BEFORE touching disk or generating anything ──────────────────
+# If Yahoo rate-limited/failed and we ended up with empty or badly incomplete
+# data, stop here — never overwrite a good Parquet cache (or dashboard_all.json)
+# with a broken one.
+MIN_ROWS = 100
+MIN_TICKER_COVERAGE = 0.5
+
+if close_raw.empty or close_adj.empty:
+    print(f"[{datetime.now():%H:%M:%S}] FATAL: fetched price data is empty — "
+          f"likely a Yahoo Finance rate-limit or outage. Leaving existing cache/"
+          f"dashboard files untouched and failing this run.")
+    sys.exit(1)
+
+if len(close_raw) < MIN_ROWS or len(close_adj) < MIN_ROWS:
+    print(f"[{datetime.now():%H:%M:%S}] FATAL: fetched price data has only "
+          f"{len(close_raw)} rows (expected >= {MIN_ROWS}). Leaving existing "
+          f"cache/dashboard files untouched and failing this run.")
+    sys.exit(1)
+
+coverage = len(set(close_raw.columns) & set(tickers)) / max(len(tickers), 1)
+if coverage < MIN_TICKER_COVERAGE:
+    print(f"[{datetime.now():%H:%M:%S}] FATAL: only {coverage:.0%} of expected "
+          f"tickers have data (expected >= {MIN_TICKER_COVERAGE:.0%}). Leaving "
+          f"existing cache/dashboard files untouched and failing this run.")
+    sys.exit(1)
+
 # ── Bound Cache & Save ────────────────────────────────────────────────────────
 # Limit history to the last 11 years to prevent memory leaks/unbounded growth
 eleven_years_ago = datetime.now() - pd.DateOffset(years=11)
@@ -213,9 +253,9 @@ if not close_adj.empty:
     close_adj = close_adj.loc[close_adj.index >= eleven_years_ago]
 
 try:
-    close_raw.to_pickle(CACHE_RAW, compression='gzip')
-    close_adj.to_pickle(CACHE_ADJ, compression='gzip')
-    print(f"[{datetime.now():%H:%M:%S}] Caches updated and saved to disk.")
+    close_raw.to_parquet(CACHE_RAW, compression='zstd')
+    close_adj.to_parquet(CACHE_ADJ, compression='zstd')
+    print(f"[{datetime.now():%H:%M:%S}] Parquet caches updated and saved to disk.")
 except Exception as e:
     print(f"[{datetime.now():%H:%M:%S}] Cache write error: {e}")
 

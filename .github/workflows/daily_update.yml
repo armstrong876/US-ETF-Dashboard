@@ -1,14 +1,23 @@
 name: Daily Dashboard Update
 
+# DAILY: Batch 1 (market indices) + Batch 2 (core 80 ETFs).
+# The heavy Batch 3 (4000+ ETFs) runs on its own weekly schedule
+# (weekly_update.yml) so it can never delay or block this daily run.
+
 on:
   schedule:
-    - cron: '30 1 * * *'    # Every day at 7:00 AM IST (1:30 AM UTC) — price data
-    - cron: '30 1 1 * *'    # 1st of every month at 7:00 AM IST — also runs fundamentals
+    - cron: '30 1 * * *'    # Every day at 7:00 AM IST (1:30 AM UTC) — indices + 80 ETFs
+    - cron: '30 1 1 * *'    # 1st of every month at 7:00 AM IST — also refreshes fundamentals
   workflow_dispatch:          # Allows manual trigger from GitHub UI
 
-# ── CRITICAL: grant write access so the action can push updated JSON files ──
+# ── CRITICAL: grant write access so the action can push updated data files ──
 permissions:
   contents: write
+
+# Prevent the daily and weekly jobs from pushing at the same instant (both target main)
+concurrency:
+  group: dashboard-data-push
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -27,9 +36,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install yfinance pandas openpyxl
+          pip install yfinance pandas pyarrow openpyxl
 
-      - name: Run Daily Price Update
+      - name: Run Daily Price Update (indices + 80 ETFs)
         run: python auto_update.py
 
       - name: Run Monthly Fundamentals Update (1st only)
@@ -42,8 +51,13 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add dashboard.json dashboard_all.json history.json \
-                  cache_raw.pkl.gz cache_adj.pkl.gz cache_raw_all.pkl.gz cache_adj_all.pkl.gz \
+          # Daily job owns: core 80-ETF dashboard, the price-history chart data,
+          # the version-robust core Parquet cache, and (on the 1st) fundamentals.
+          git add dashboard.json history.json \
+                  nav_core_raw.parquet nav_core_adj.parquet \
                   yf_profiles.json || true
-          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Auto-update data [skip ci]"
-          git push
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Daily auto-update: indices + 80 ETFs [skip ci]"
+          # Rebase on any concurrent weekly push before pushing, then retry once.
+          git pull --rebase origin main || true
+          git push || (git pull --rebase origin main && git push)

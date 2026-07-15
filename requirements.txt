@@ -1,4 +1,7 @@
 yfinance
 pandas
+pyarrow
 openpyxl
 flask
+requests
+beautifulsoup4

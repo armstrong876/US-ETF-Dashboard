@@ -1,0 +1,53 @@
+name: Weekly Full-Universe Update
+
+# WEEKLY: Batch 3 — the full ~4000+ ETF universe (data_engine_all.py).
+# This fetch is large and rate-limit-prone, so it is deliberately kept OFF the
+# daily critical path. If it fails or is slow, the daily indices/80-ETF refresh
+# is completely unaffected.
+
+on:
+  schedule:
+    - cron: '30 2 * * 0'    # Every Sunday at 8:00 AM IST (2:30 AM UTC) — 1h after daily
+  workflow_dispatch:          # Allows manual trigger from GitHub UI
+
+permissions:
+  contents: write
+
+# Shared with the daily job so the two never push to main at the same instant
+concurrency:
+  group: dashboard-data-push
+  cancel-in-progress: false
+
+jobs:
+  update-all:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance pandas pyarrow openpyxl
+
+      - name: Run Weekly Full-Universe Update (4000+ ETFs)
+        run: python data_engine_all.py
+
+      - name: Commit and push updated data files
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          # Weekly job owns: the full-universe dashboard + its Parquet cache only.
+          git add dashboard_all.json \
+                  nav_all_raw.parquet nav_all_adj.parquet || true
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Weekly auto-update: full ETF universe [skip ci]"
+          git pull --rebase origin main || true
+          git push || (git pull --rebase origin main && git push)
