@@ -421,6 +421,14 @@
 
         // Initialize
         refreshCaptcha();
+
+        // Pressing Enter in any field submits the login (same as clicking LOGIN)
+        ['userId', 'password', 'captchaInput'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
+            });
+        });
     </script>
 </body>
 </html>

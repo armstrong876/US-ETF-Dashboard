@@ -55,6 +55,7 @@ jobs:
           # the version-robust core Parquet cache, and (on the 1st) fundamentals.
           git add dashboard.json history.json \
                   nav_core_raw.parquet nav_core_adj.parquet \
+                  etf_analytics.json \
                   yf_profiles.json || true
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "Daily auto-update: indices + 80 ETFs [skip ci]"

@@ -122,6 +122,29 @@ def refresh():
             "message": f"System Error: {str(e)}"
         }), 500
 
+@app.route('/api/refresh-etf-details', methods=['POST'])
+def refresh_etf_details():
+    """Manual-only trigger for QQQ/SMH (and later, all 80) ETF composition &
+    holdings data. Not on any automatic schedule — only runs when called here."""
+    print(f"[{datetime.now():%H:%M:%S}] ETF composition refresh requested...")
+    try:
+        result = subprocess.run(
+            ["python", "etf_composition_engine.py"],
+            check=True, capture_output=True, text=True
+        )
+        print(result.stdout)
+        return jsonify({
+            "status": "success",
+            "message": "ETF composition & holdings data refreshed.",
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+    except subprocess.CalledProcessError as e:
+        print(f"  ERROR: {e.stderr}")
+        return jsonify({"status": "error", "message": f"Composition engine failed: {e.stderr}"}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 if __name__ == '__main__':
     print("====================================================")
     print("   Armstrong Capital — ETF Dashboard Server")

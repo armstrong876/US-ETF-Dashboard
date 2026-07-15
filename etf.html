@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ETF Profile | Armstrong Capital</title>
+  <meta name="description" content="Detailed ETF profile with performance charts, sector breakdown, holdings, and momentum analysis." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css?v=1.3" />
+  <link rel="stylesheet" href="etf.css?v=1.0" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="auth.js"></script>
+</head>
+<body>
+
+<!-- ═══════════ TOP NAV ═══════════ -->
+<nav class="etf-topnav">
+  <button class="etf-back-btn" onclick="window.location.href='index.html'">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    Back to Dashboard
+  </button>
+  <div class="etf-topnav-right">
+    <button id="themeToggleBtn" class="etf-theme-btn" onclick="toggleEtfTheme()">☀️ Light Mode</button>
+    <div class="etf-nav-brand">
+      <img src="armstrong_logo.jpg" alt="Armstrong Capital" />
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════ LOADING OVERLAY ═══════════ -->
+<div class="etf-loading-overlay" id="etfLoadingOverlay">
+  <div class="etf-loading-card">
+    <div class="spinner"></div>
+    <p class="load-title">Loading ETF Profile</p>
+    <p class="load-sub" id="etfLoadingSymbol">Fetching data…</p>
+  </div>
+</div>
+
+<!-- ═══════════ ERROR STATE ═══════════ -->
+<div class="etf-error-overlay" id="etfErrorOverlay" style="display:none;">
+  <div class="error-card">
+    <div class="error-icon">⚠️</div>
+    <h3>ETF Not Found</h3>
+    <p id="etfErrorMsg">This ETF is not in the universe.</p>
+    <button onclick="window.location.href='index.html'">← Return to Dashboard</button>
+  </div>
+</div>
+
+<!-- ═══════════ HERO SECTION ═══════════ -->
+<section class="etf-hero" id="etfHero" style="display:none;">
+  <div class="etf-hero-glow" id="etfHeroGlow"></div>
+  <div class="etf-hero-inner">
+    <div class="etf-hero-top-row">
+      <div class="etf-ticker-block">
+        <span class="etf-ticker-big" id="etfTicker">—</span>
+        <div class="etf-badges-row">
+          <span class="etf-asset-badge" id="etfAssetBadge">—</span>
+          <span class="etf-cat-badge" id="etfCatBadge">—</span>
+          <span class="etf-signal-pill" id="etfSignalPill">—</span>
+        </div>
+      </div>
+      <div class="etf-fullname-block">
+        <h1 class="etf-fullname" id="etfFullName">—</h1>
+        <p class="etf-description" id="etfDescription"></p>
+      </div>
+    </div>
+    <!-- Key Metrics Strip -->
+    <div class="etf-metrics-strip" id="etfKeyMetrics"></div>
+  </div>
+</section>
+
+<!-- ═══════════ MAIN CONTENT ═══════════ -->
+<main class="etf-main" id="etfMain" style="display:none;">
+
+  <!-- ══ SECTION 1: Key Fundamentals (sourced from Yahoo Finance) ══ -->
+  <section class="etf-section" id="fundamentalsSection">
+    <div class="etf-section-header">
+      <div class="etf-section-title">
+        <span class="etf-section-icon">📋</span>
+        <h2>Key Fundamentals</h2>
+      </div>
+    </div>
+    <div class="etf-fund-grid" id="fundamentalsGrid"></div>
+  </section>
+
+  <!-- ══ SECTION 2: Price Performance Chart ══ -->
+  <section class="etf-section" id="priceSection">
+    <div class="etf-section-header">
+      <div class="etf-section-title">
+        <span class="etf-section-icon">📈</span>
+        <h2>Price Performance</h2>
+      </div>
+      <div class="etf-chart-header-controls">
+        <div class="etf-compare-tabs-spacer"></div>
+        <div class="etf-tf-pills" id="etfTfPills">
+          <button class="etf-tf-btn" data-tf="1M" onclick="setEtfTf('1M')">1M</button>
+          <button class="etf-tf-btn" data-tf="3M" onclick="setEtfTf('3M')">3M</button>
+          <button class="etf-tf-btn" data-tf="6M" onclick="setEtfTf('6M')">6M</button>
+          <button class="etf-tf-btn active" data-tf="1Y" onclick="setEtfTf('1Y')">1Y</button>
+          <button class="etf-tf-btn" data-tf="3Y" onclick="setEtfTf('3Y')">3Y</button>
+          <button class="etf-tf-btn" data-tf="5Y" onclick="setEtfTf('5Y')">5Y</button>
+          <button class="etf-tf-btn" data-tf="All" onclick="setEtfTf('All')">All</button>
+          <button class="etf-tf-btn" data-tf="custom" onclick="setEtfTf('custom')">📅 Custom</button>
+        </div>
+        <div class="etf-compare-tabs" id="etfCompareTabs">
+          <button class="etf-compare-btn" id="compareSpyBtn" onclick="setCompareBenchmark('SPY')">⚖️ vs S&amp;P 500</button>
+          <button class="etf-compare-btn" id="compareNdxBtn" onclick="setCompareBenchmark('NDX')">⚖️ vs Nasdaq-100</button>
+        </div>
+      </div>
+    </div>
+    <div class="etf-custom-dates" id="etfCustomDates" style="display:none;">
+      <span class="etf-date-label">From</span>
+      <input type="date" id="etfFromDate" class="etf-date-input" onchange="renderPriceChart()" />
+      <span class="etf-date-label">To</span>
+      <input type="date" id="etfToDate" class="etf-date-input" onchange="renderPriceChart()" />
+    </div>
+    <div class="etf-price-chart-wrap">
+      <canvas id="priceChartCanvas"></canvas>
+    </div>
+    <div class="etf-chart-footer" id="priceChartFooter"></div>
+  </section>
+
+  <!-- ══ SECTION 2: Returns vs Benchmarks Table ══ -->
+  <section class="etf-section" id="returnsSection">
+    <div class="etf-section-header">
+      <div class="etf-section-title">
+        <span class="etf-section-icon">📊</span>
+        <h2>Returns vs Benchmarks</h2>
+      </div>
+      <p class="etf-section-desc">Trailing returns vs S&amp;P 500 (SPY) &amp; Nasdaq-100 (^NDX) benchmarks</p>
+    </div>
+    <div class="etf-table-wrap">
+      <table class="etf-returns-table">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th id="returnColETF">ETF</th>
+            <th>S&amp;P 500</th>
+            <th>Nasdaq-100</th>
+            <th>vs S&amp;P 500</th>
+            <th>vs Nasdaq-100</th>
+          </tr>
+        </thead>
+        <tbody id="returnsTableBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ SECTION 3: Portfolio Composition ══ -->
+  <section class="etf-section" id="compositionSection">
+    <div class="etf-section-header">
+      <div class="etf-section-title">
+        <span class="etf-section-icon">🥧</span>
+        <h2>Portfolio Composition</h2>
+      </div>
+    </div>
+
+    <div class="etf-na-msg" id="compositionNA" style="display:none;">
+      <span>📋</span>
+      <p>Detailed composition data coming soon for this ETF.</p>
+    </div>
+
+    <div class="etf-composition-grid" id="compositionGrid">
+      <!-- Row 1: Sector + Country -->
+      <div class="etf-comp-card" id="sectorCard">
+        <h3 class="etf-comp-title">Sector Holdings</h3>
+        <div class="etf-donut-layout">
+          <div class="etf-donut-wrap">
+            <canvas id="sectorChartCanvas"></canvas>
+          </div>
+          <div class="etf-donut-legend" id="sectorLegend"></div>
+        </div>
+      </div>
+
+      <div class="etf-comp-card" id="countryCard">
+        <h3 class="etf-comp-title">Country Exposure</h3>
+        <div class="etf-donut-layout">
+          <div class="etf-donut-wrap">
+            <canvas id="countryChartCanvas"></canvas>
+          </div>
+          <div class="etf-donut-legend" id="countryLegend"></div>
+        </div>
+      </div>
+
+      <!-- Row 2: Market Cap (horizontal bar chart) + Developed/Emerging split
+           and concentration stats -->
+      <div class="etf-comp-card etf-comp-card-wide" id="mcapCard">
+        <div class="etf-mcap-layout">
+          <div class="etf-mcap-main">
+            <h3 class="etf-comp-title">Market Cap Exposure</h3>
+            <div class="etf-mcap-chart-wrap">
+              <canvas id="mcapBarChartCanvas"></canvas>
+            </div>
+          </div>
+          <div class="etf-mcap-side" id="mcapSide">
+            <h3 class="etf-comp-title">Developed / Emerging</h3>
+            <div class="stacked-bar-track" id="devEmStackedBar"></div>
+            <div class="stacked-bar-legend" id="devEmLegend"></div>
+            <div class="mcap-side-stats" id="mcapSideStats"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ SECTION 4: Top 10 Holdings ══ -->
+  <section class="etf-section" id="top10Section">
+    <div class="etf-section-header">
+      <div class="etf-section-title">
+        <span class="etf-section-icon">🏦</span>
+        <h2>Top 10 Holdings</h2>
+      </div>
+      <p class="etf-section-desc" id="top10Concentration"></p>
+    </div>
+    <div id="top10Body" class="etf-holdings-grid"></div>
+  </section>
+
+  <!-- ══ SECTION 5: Returns Heatmap ══ -->
+  <section class="etf-section" id="heatmapSection">
+    <div class="etf-section-header">
+      <div class="etf-section-title">
+        <span class="etf-section-icon">🔥</span>
+        <h2>Returns Heatmap</h2>
+      </div>
+      <p class="etf-section-desc">All trailing periods — ETF returns &amp; performance vs SPY</p>
+    </div>
+    <div class="etf-table-wrap">
+      <table class="etf-heatmap-table">
+        <thead>
+          <tr>
+            <th class="hm-row-label">Metric</th>
+            <th>1W</th><th>15D</th><th>1M</th><th>2M</th><th>3M</th>
+            <th>6M</th><th>9M</th><th>1Y</th><th>2Y</th><th>3Y</th><th>5Y</th><th>7Y</th><th>10Y</th>
+          </tr>
+        </thead>
+        <tbody id="heatmapRowBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ SECTION 6: Monthly Returns ══ -->
+  <section class="etf-section" id="monthlyReturnsSection">
+    <div class="etf-section-header">
+      <div class="etf-section-title">
+        <span class="etf-section-icon">🗓️</span>
+        <h2>Monthly Returns</h2>
+      </div>
+      <p class="etf-section-desc" id="monthlyReturnsDesc">Calendar-year monthly returns of this ETF</p>
+    </div>
+    <div class="etf-table-wrap">
+      <table class="etf-monthly-table" id="monthlyReturnsTable">
+        <thead>
+          <tr id="monthlyReturnsHeadRow"></tr>
+        </thead>
+        <tbody id="monthlyReturnsBody"></tbody>
+      </table>
+    </div>
+    <p class="etf-chart-footer" id="monthlyReturnsFooter" style="text-align:left;"></p>
+  </section>
+
+  <!-- ══ SECTION 8: Momentum Analysis ══ -->
+  <section class="etf-section" id="momentumSection">
+    <div class="etf-section-header">
+      <div class="etf-section-title">
+        <span class="etf-section-icon">⚡</span>
+        <h2>Momentum Analysis</h2>
+      </div>
+    </div>
+    <div class="etf-momentum-grid">
+
+      <!-- Gauge -->
+      <div class="etf-momentum-gauge-card">
+        <h3>Momentum Score</h3>
+        <div class="gauge-wrap">
+          <div class="gauge-arc">
+            <div class="gauge-arc-weak"></div>
+            <div class="gauge-arc-neutral"></div>
+            <div class="gauge-arc-strong"></div>
+          </div>
+          <div class="gauge-needle-wrap" id="gaugeNeedleWrap">
+            <div class="gauge-needle" id="gaugeNeedle"></div>
+          </div>
+          <div class="gauge-center-display">
+            <div class="gauge-score-val" id="gaugeScore">—</div>
+            <div class="gauge-score-label">Score</div>
+          </div>
+        </div>
+        <div class="gauge-zone-labels">
+          <span class="zone-weak">Weak</span>
+          <span class="zone-neutral">Neutral</span>
+          <span class="zone-strong">Strong</span>
+        </div>
+        <div id="momentumSignalBox"></div>
+      </div>
+
+      <!-- Breakdown Table -->
+      <div class="etf-momentum-breakdown-card">
+        <h3>Score Breakdown</h3>
+        <p class="etf-section-desc">Weighted return contributions per period</p>
+        <table class="etf-breakdown-table">
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th>Return</th>
+              <th>Weight</th>
+              <th>Contribution</th>
+            </tr>
+          </thead>
+          <tbody id="momentumBreakdownBody"></tbody>
+          <tfoot>
+            <tr id="momentumTotalRow" class="breakdown-total"></tr>
+          </tfoot>
+        </table>
+        <div class="methodology-note">
+          <strong>Formula:</strong> Score = (1M × 20%) + (3M × 30%) + (6M × 30%) + (12M × 20%)
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ SECTION 9: Risk Analysis ══ -->
+  <section class="etf-section" id="riskSection" style="display:none;">
+    <div class="etf-section-header">
+      <div class="etf-section-title">
+        <span class="etf-section-icon">🛡️</span>
+        <h2>Risk Analysis</h2>
+      </div>
+      <p class="etf-section-desc" id="riskSectionDesc"></p>
+    </div>
+
+    <div class="etf-risk-grid">
+      <div class="risk-metric-card">
+        <span class="risk-metric-lbl">Annualized Volatility</span>
+        <span class="risk-metric-val" id="riskStdDev">—</span>
+        <span class="risk-metric-sub">Std. deviation of monthly returns × √12</span>
+      </div>
+      <div class="risk-metric-card">
+        <span class="risk-metric-lbl">Sharpe Ratio</span>
+        <span class="risk-metric-val" id="riskSharpe">—</span>
+        <span class="risk-metric-sub">Return per unit of total risk</span>
+      </div>
+      <div class="risk-metric-card">
+        <span class="risk-metric-lbl">Sortino Ratio</span>
+        <span class="risk-metric-val" id="riskSortino">—</span>
+        <span class="risk-metric-sub">Return per unit of downside risk</span>
+      </div>
+      <div class="risk-metric-card">
+        <span class="risk-metric-lbl">Beta</span>
+        <span class="risk-metric-val" id="riskBeta">—</span>
+        <span class="risk-metric-sub" id="riskBetaSub">Sensitivity vs benchmark</span>
+      </div>
+      <div class="risk-metric-card">
+        <span class="risk-metric-lbl">Alpha (annualized)</span>
+        <span class="risk-metric-val" id="riskAlpha">—</span>
+        <span class="risk-metric-sub">Excess return vs CAPM expectation</span>
+      </div>
+      <div class="risk-metric-card">
+        <span class="risk-metric-lbl">Max Drawdown</span>
+        <span class="risk-metric-val" id="riskMaxDD">—</span>
+        <span class="risk-metric-sub" id="riskMaxDDSub">Peak-to-trough decline</span>
+      </div>
+      <div class="risk-metric-card">
+        <span class="risk-metric-lbl">Recovery Time</span>
+        <span class="risk-metric-val" id="riskRecovery">—</span>
+        <span class="risk-metric-sub" id="riskRecoverySub">Days to regain prior peak</span>
+      </div>
+      <div class="risk-metric-card risk-composite-card">
+        <span class="risk-metric-lbl">Composite Risk Score</span>
+        <span class="risk-metric-val" id="riskComposite">—</span>
+        <span class="risk-metric-sub" id="riskCompositeSub">0–100 weighted blend</span>
+      </div>
+    </div>
+
+    <div class="etf-risk-charts-row">
+      <div class="risk-chart-card">
+        <h3>Upside / Downside Capture</h3>
+        <div class="risk-chart-wrap-sm">
+          <canvas id="captureChartCanvas"></canvas>
+        </div>
+      </div>
+      <div class="risk-chart-card">
+        <h3>Drawdown History (3Y)</h3>
+        <div class="risk-chart-wrap-sm">
+          <canvas id="drawdownChartCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="risk-narrative-card">
+      <h3 class="risk-interp-heading" id="riskInterpHeading">Risk Profile Interpretation</h3>
+      <div class="risk-verdict-banner" id="riskVerdictBanner"></div>
+      <div id="riskNarrativeList" class="risk-interp-grid"></div>
+    </div>
+  </section>
+
+  <div class="etf-na-msg" id="riskNA" style="display:none;">
+    <span>🛡️</span>
+    <p>Risk analysis is not available for this ETF yet.</p>
+  </div>
+
+</main>
+
+<script src="etf.js"></script>
+</body>
+</html>

@@ -48,18 +48,19 @@ async function fetchAndRender() {
     processData();
     showLoading(false);
 
-    // Data engine always uses end=TODAY (exclusive in yfinance), so data is always T-1 (yesterday).
-    // We compare against yesterday's date — if as_of_date matches yesterday, the dashboard is current.
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
-    const isUpToDate = DATA.as_of_date >= yesterdayStr;
-
+    // Freshness: compare as_of_date to the last COMPLETED US trading day
+    // (weekend-aware, computed in LOCAL time — not the old naive calendar-
+    // yesterday/UTC check, which false-alarmed on Mondays and could be off by
+    // one day in IST).
     if (DATA) {
-      if (isUpToDate) {
+      const fresh = computeFreshness(DATA.as_of_date);
+      if (fresh.status === 'current') {
         showToast('Dashboard is up to date. Data as of ' + DATA.as_of_date + '.', 'success');
-      } else {
+      } else if (fresh.status === 'behind') {
         showToast('Data shown is from ' + DATA.as_of_date + '. Next auto-update: 7:00 AM IST.', 'info');
+      } else if (fresh.status === 'stale') {
+        showToast('⚠ Data looks stale (' + DATA.as_of_date + ', ~' + fresh.diffDays +
+                  ' days behind). The daily update or the live-site deploy may need attention.', 'error');
       }
     }
   } catch (e) {
@@ -80,13 +81,55 @@ function showToast(msg, type = 'info') {
   setTimeout(() => toast.remove(), 6000);
 }
 
+// ── Data freshness (weekend-aware, local-time) ────────────
+// The engine caps data at end=TODAY (exclusive), so a healthy run's as_of_date
+// equals the last COMPLETED trading day = yesterday if a weekday, else the
+// Friday before. We compute that expected day and compare, giving a small
+// tolerance so a normal weekend/holiday gap never false-alarms.
+function _localDateStr(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+function _expectedLastTradingDay() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);                                    // T-1
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1); // skip Sat/Sun
+  return _localDateStr(d);
+}
+function computeFreshness(asOf) {
+  if (!asOf) return { status: 'unknown', diffDays: null };
+  const expected = _expectedLastTradingDay();
+  const diffDays = Math.round(
+    (new Date(expected + 'T00:00:00') - new Date(asOf + 'T00:00:00')) / 86400000);
+  if (diffDays <= 0) return { status: 'current', diffDays: 0 };
+  if (diffDays <= 4) return { status: 'behind', diffDays };      // weekend/holiday tolerance
+  return { status: 'stale', diffDays };
+}
+function renderFreshness() {
+  const pill = document.getElementById('asOfDate');
+  if (!pill) return;
+  const asOf = DATA && DATA.as_of_date;
+  if (!asOf) { pill.className = 'meta-pill'; pill.textContent = 'As of: —'; return; }
+  const f = computeFreshness(asOf);
+  const map = {
+    current: { cls: 'fresh-current', tag: '✓ Current' },
+    behind:  { cls: 'fresh-behind',  tag: '⚠ Behind' },
+    stale:   { cls: 'fresh-stale',   tag: '⚠ Stale · ' + f.diffDays + 'd' },
+    unknown: { cls: '', tag: '' },
+  };
+  const m = map[f.status] || map.unknown;
+  pill.className = 'meta-pill freshness ' + m.cls;
+  pill.innerHTML = 'As of: <strong>' + asOf + '</strong>' +
+    (m.tag ? ' <span class="fresh-tag">' + m.tag + '</span>' : '');
+}
+
 // ── Process & Render ──────────────────────────────────────
 function processData() {
   // Meta bar
   document.getElementById('updateText').textContent =
     'Updated: ' + (DATA.last_updated || '—');
-  document.getElementById('asOfDate').textContent =
-    'As of: ' + (DATA.as_of_date || '—');
+  renderFreshness();
 
   // Permission: Editor Only actions
   if (!Auth.isEditor()) {
@@ -316,7 +359,7 @@ function buildOverviewRow(e, rank) {
       <td class="col-rank">${rank}</td>
       <td class="sticky-col col-ticker">
         <div class="ticker-box">
-          <span class="ticker-sym">${e.symbol}</span>
+          ${getTickerHtml(e.symbol)}
         </div>
       </td>
       <td class="col-name">${e.name || '—'}</td>
@@ -366,7 +409,7 @@ function buildHeatRow(e, rank) {
 
   return `<tr class="${hlClass}">
     <td class="col-rank sticky-col">${rank}</td>
-    <td class="col-ticker sticky-col">${e.symbol}</td>
+    <td class="col-ticker sticky-col">${getTickerHtml(e.symbol)}</td>
     <td class="col-name"  title="${esc(e.name)}">${esc(e.name)}</td>
     <td class="col-cat"   title="${esc(e.category)}">${esc(e.category)}</td>
     ${cells}
@@ -423,7 +466,7 @@ function buildRankCard(r, isTop) {
   return `
   <div class="rank-card ${hlClass}">
     <span class="rank-num">${r.rank}</span>
-    <span class="rank-sym">${r.symbol}</span>
+    <span class="rank-sym">${getTickerHtml(r.symbol)}</span>
     <span class="rank-name" title="${esc(r.name)}">${esc(r.name)}</span>
     <span class="rank-score" style="color:${scoreColor}">${fmtScore(r.score)}</span>
     <span class="rank-ret" style="color:${r.ret_3m>=0?'var(--green)':'var(--red)'}">${r3m}</span>
@@ -459,7 +502,7 @@ function buildSignalCard(e) {
   return `
   <div class="signal-card sig-${sig} ${hlClass}">
     <div class="sig-top">
-      <span class="sig-ticker">${e.symbol}</span>
+      <span class="sig-ticker">${getTickerHtml(e.symbol)}</span>
       <span class="sig-emoji">${emoji}</span>
     </div>
     <div class="sig-name" title="${esc(e.name)}">${esc(e.name)}</div>
@@ -496,7 +539,7 @@ function buildRelRow(e, rank) {
 
   return `<tr class="${hlClass}">
     <td class="col-rank sticky-col">${rank}</td>
-    <td class="col-ticker sticky-col">${e.symbol}</td>
+    <td class="col-ticker sticky-col">${getTickerHtml(e.symbol)}</td>
     <td class="col-name" title="${esc(e.name)}">${esc(e.name)}</td>
     ${cells}
     <td class="score-col ${scoreClass}">${ms != null ? ms.toFixed(2) : '—'}</td>
@@ -572,7 +615,7 @@ function renderVisualHeatmap() {
     return `
       <div class="heatmap-tile ${bgClass}">
         <div class="vh-top">
-          <span class="vh-ticker">${e.symbol}</span>
+          <span class="vh-ticker">${getTickerHtml(e.symbol)}</span>
           <span class="vh-ret">${disp}</span>
         </div>
         <div class="vh-sector" title="${esc(e.category)}">${esc(e.category || 'Unknown')}</div>
@@ -597,6 +640,14 @@ function fmtAUM(v) {
   if (v >= 1e9)  return '$' + (v / 1e9).toFixed(2) + 'B';
   if (v >= 1e6)  return '$' + (v / 1e6).toFixed(2) + 'M';
   return '$' + v.toLocaleString();
+}
+
+function getTickerHtml(symbol) {
+  const allowed = ['QQQ', 'SMH', 'AIQ'];
+  if (allowed.includes(symbol)) {
+    return `<a href="etf.html?symbol=${symbol}" class="ticker-link active-link" title="Click to view full ETF Profile of ${symbol}">${symbol}</a>`;
+  }
+  return `<span class="ticker-link disabled-link" onclick="showToast('Detailed analysis pages are currently being built. QQQ, SMH, and AIQ are available as sample previews.', 'info')" title="Preview available only for QQQ, SMH, AIQ">${symbol}</span>`;
 }
 
 function fmtPct(v) {
@@ -642,6 +693,34 @@ function showLoading(show) {
 
 function showError()  { document.getElementById('errorOverlay').style.display = 'flex'; }
 function hideError()  { document.getElementById('errorOverlay').style.display = 'none'; }
+
+// ── Toast Notification ──────────────────────────────────
+window.showToast = function(message, type = 'info') {
+  let container = document.getElementById('notification-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'notification-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `toast-notification toast-${type}`;
+  toast.innerHTML = `
+    <span class="toast-icon">${type === 'info' ? 'ℹ️' : type === 'success' ? '✅' : '⚠️'}</span>
+    <span class="toast-msg">${message}</span>
+  `;
+  container.appendChild(toast);
+
+  // Animate in
+  requestAnimationFrame(() => toast.classList.add('toast-show'));
+
+  // Auto-dismiss after 4 seconds
+  setTimeout(() => {
+    toast.classList.remove('toast-show');
+    toast.classList.add('toast-hide');
+    setTimeout(() => toast.remove(), 400);
+  }, 4000);
+};
 
 // ══════════════════════ PERFORMANCE COMPARISON CHART ════════════════════════
 let HIST_DATA  = null;

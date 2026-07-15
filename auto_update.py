@@ -16,6 +16,16 @@ def run_update():
         print(f"[{datetime.now():%H:%M:%S}] Running data_engine.py...")
         subprocess.run([sys.executable, "data_engine.py"], check=True)
 
+        # ETF detail-page analytics (Monthly Returns calendar + Risk Analysis for
+        # QQQ/SMH...). Reads history.json, writes etf_analytics.json only.
+        # NON-FATAL: a hiccup here (e.g. the ^IRX risk-free-rate fetch) must never
+        # fail the core daily dashboard update — it just logs and moves on.
+        print(f"[{datetime.now():%H:%M:%S}] Running etf_analytics_engine.py...")
+        try:
+            subprocess.run([sys.executable, "etf_analytics_engine.py"], check=True)
+        except Exception as e:
+            print(f"[{datetime.now():%H:%M:%S}] (non-fatal) etf_analytics_engine failed: {e}")
+
         print(f"[{datetime.now():%H:%M:%S}] Daily update complete. GitHub Action will commit and push the new data files.")
 
     except Exception as e:
