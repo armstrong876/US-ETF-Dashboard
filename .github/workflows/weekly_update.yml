@@ -48,6 +48,7 @@ jobs:
           git add dashboard_all.json \
                   nav_all_raw.parquet nav_all_adj.parquet || true
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "Weekly auto-update: full ETF universe [skip ci]"
+          # No "[skip ci]" — that tag makes Netlify skip the deploy (see daily_update.yml).
+          git commit -m "Weekly auto-update: full ETF universe"
           git pull --rebase origin main || true
           git push || (git pull --rebase origin main && git push)

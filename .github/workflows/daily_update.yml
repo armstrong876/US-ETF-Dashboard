@@ -58,7 +58,11 @@ jobs:
                   etf_analytics.json \
                   yf_profiles.json || true
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "Daily auto-update: indices + 80 ETFs [skip ci]"
+          # NOTE: no "[skip ci]" — Netlify treats that tag as "skip this deploy",
+          # which was silently blocking the live site from ever updating. These
+          # workflows only trigger on schedule/dispatch (never on push), so there
+          # is no self-trigger loop to guard against.
+          git commit -m "Daily auto-update: indices + 80 ETFs"
           # Rebase on any concurrent weekly push before pushing, then retry once.
           git pull --rebase origin main || true
           git push || (git pull --rebase origin main && git push)
