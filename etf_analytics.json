@@ -1,21 +1,21 @@
 {
-  "as_of_date": "2026-07-16",
-  "generated_at": "2026-07-17 04:39:57",
-  "risk_free_rate_annual": 0.03697,
+  "as_of_date": "2026-07-17",
+  "generated_at": "2026-07-18 04:24:27",
+  "risk_free_rate_annual": 0.03707,
   "nasdaq100_trailing_returns": {
-    "1W": -2.36,
-    "15D": -1.41,
-    "1M": -2.17,
-    "2M": 0.72,
-    "3M": 9.16,
-    "6M": 14.61,
-    "9M": 14.46,
-    "12M": 24.53,
-    "2Y": 25.12,
-    "3Y": 25.13,
-    "5Y": 13.61,
-    "7Y": 20.56,
-    "10Y": 19.7
+    "1W": -4.13,
+    "15D": -1.8,
+    "1M": -5.96,
+    "2M": -2.41,
+    "3M": 7.98,
+    "6M": 12.05,
+    "9M": 10.73,
+    "12M": 22.48,
+    "2Y": 22.65,
+    "3Y": 24.15,
+    "5Y": 13.75,
+    "7Y": 20.08,
+    "10Y": 19.39
   },
   "etfs": {
     "QQQ": {
@@ -176,7 +176,7 @@
           "Apr": 15.69,
           "May": 10.57,
           "Jun": -0.15,
-          "Jul": -4.14
+          "Jul": -5.58
         }
       },
       "monthly_returns_annual_total": {
@@ -191,26 +191,26 @@
         "2023": 54.84,
         "2024": 25.56,
         "2025": 20.77,
-        "2026": 15.19
+        "2026": 13.46
       },
       "risk_analysis": {
         "window_months": 36,
-        "risk_free_rate_annual_pct": 3.7,
-        "std_dev_annual_pct": 17.46,
-        "cagr_3y_pct": 23.25,
-        "benchmark_cagr_3y_pct": 22.58,
-        "sharpe_ratio": 1.12,
-        "sortino_ratio": 2.431,
+        "risk_free_rate_annual_pct": 3.71,
+        "std_dev_annual_pct": 17.65,
+        "cagr_3y_pct": 22.63,
+        "benchmark_cagr_3y_pct": 21.97,
+        "sharpe_ratio": 1.072,
+        "sortino_ratio": 2.267,
         "beta": 1.003,
-        "alpha_annual_pct": 0.61,
+        "alpha_annual_pct": 0.6,
         "max_drawdown_pct": -35.12,
         "max_drawdown_trough_date": "2022-11-03",
         "recovery_days": 406,
         "recovery_date": "2023-12-14",
         "recovery_status": "Recovered",
         "upside_capture_pct": 101.4,
-        "downside_capture_pct": 98.9,
-        "composite_score": 62.4,
+        "downside_capture_pct": 99.0,
+        "composite_score": 61.9,
         "composite_note": "Raw weighted blend (Sharpe 30% / Sortino 20% / Alpha 20% / Max Drawdown 15% / Capture spread 15%). Peer-percentile ranking will activate once the full 80-ETF universe runs through this engine."
       }
     },
@@ -372,7 +372,7 @@
           "Apr": 32.16,
           "May": 18.2,
           "Jun": 9.51,
-          "Jul": -13.26
+          "Jul": -15.15
         }
       },
       "monthly_returns_annual_total": {
@@ -387,26 +387,26 @@
         "2023": 73.37,
         "2024": 39.11,
         "2025": 49.19,
-        "2026": 57.97
+        "2026": 54.53
       },
       "risk_analysis": {
         "window_months": 36,
-        "risk_free_rate_annual_pct": 3.7,
-        "std_dev_annual_pct": 32.36,
-        "cagr_3y_pct": 53.12,
-        "benchmark_cagr_3y_pct": 44.75,
-        "sharpe_ratio": 1.528,
-        "sortino_ratio": 3.862,
-        "beta": 0.841,
-        "alpha_annual_pct": 14.92,
+        "risk_free_rate_annual_pct": 3.71,
+        "std_dev_annual_pct": 32.72,
+        "cagr_3y_pct": 52.0,
+        "benchmark_cagr_3y_pct": 43.96,
+        "sharpe_ratio": 1.476,
+        "sortino_ratio": 3.579,
+        "beta": 0.844,
+        "alpha_annual_pct": 14.31,
         "max_drawdown_pct": -45.3,
         "max_drawdown_trough_date": "2022-10-14",
         "recovery_days": 273,
         "recovery_date": "2023-07-14",
         "recovery_status": "Recovered",
         "upside_capture_pct": 98.7,
-        "downside_capture_pct": 83.6,
-        "composite_score": 75.3,
+        "downside_capture_pct": 84.5,
+        "composite_score": 74.3,
         "composite_note": "Raw weighted blend (Sharpe 30% / Sortino 20% / Alpha 20% / Max Drawdown 15% / Capture spread 15%). Peer-percentile ranking will activate once the full 80-ETF universe runs through this engine."
       }
     }
