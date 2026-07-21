@@ -2,6 +2,41 @@
   publish = "."
   command = ""
 
+# ── Data proxied from Supabase Storage (public "site-data" bucket) ──
+# The site still requests these files at the same paths; Netlify fetches them
+# from Supabase at request time (status 200 = proxy). This means the daily data
+# updates land in Supabase and appear live WITHOUT any Netlify deploy.
+# force=true so the proxy wins even though the (now-frozen) committed copies exist.
+[[redirects]]
+  from = "/dashboard.json"
+  to = "https://gjpjhslkxdkxffeipumh.supabase.co/storage/v1/object/public/site-data/dashboard.json"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/dashboard_all.json"
+  to = "https://gjpjhslkxdkxffeipumh.supabase.co/storage/v1/object/public/site-data/dashboard_all.json"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/etf_analytics.json"
+  to = "https://gjpjhslkxdkxffeipumh.supabase.co/storage/v1/object/public/site-data/etf_analytics.json"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/etf_detail_data.json"
+  to = "https://gjpjhslkxdkxffeipumh.supabase.co/storage/v1/object/public/site-data/etf_detail_data.json"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/history.json"
+  to = "https://gjpjhslkxdkxffeipumh.supabase.co/storage/v1/object/public/site-data/history.json"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/"
   to = "/login.html"

@@ -121,6 +121,15 @@ def download_in_batches(tickers_to_download, download_kwargs):
 close_raw = pd.DataFrame()
 close_adj = pd.DataFrame()
 
+# Pull the full-universe Parquet cache from Supabase (no-op without creds)
+try:
+    import supabase_store as _sb
+    if _sb.enabled():
+        _sb.download_file("nav/nav_all_raw.parquet", CACHE_RAW)
+        _sb.download_file("nav/nav_all_adj.parquet", CACHE_ADJ)
+except Exception:
+    pass
+
 cache_loaded = False
 if os.path.exists(CACHE_RAW) and os.path.exists(CACHE_ADJ):
     try:
@@ -258,6 +267,17 @@ try:
     print(f"[{datetime.now():%H:%M:%S}] Parquet caches updated and saved to disk.")
 except Exception as e:
     print(f"[{datetime.now():%H:%M:%S}] Cache write error: {e}")
+
+# ── Push full-universe Parquet cache to Supabase (private) ────────────────────
+try:
+    import supabase_store as _sb
+    if _sb.enabled():
+        _u1 = _sb.upload_file(CACHE_RAW, "nav/nav_all_raw.parquet")
+        _u2 = _sb.upload_file(CACHE_ADJ, "nav/nav_all_adj.parquet")
+        print(f"[{datetime.now():%H:%M:%S}] Supabase: full-universe Parquet pushed." if (_u1 and _u2)
+              else f"[{datetime.now():%H:%M:%S}] Supabase: all-parquet push FAILED.")
+except Exception as e:
+    print(f"[{datetime.now():%H:%M:%S}] Supabase push skipped ({e}).")
 
 print(f"\n[{datetime.now():%H:%M:%S}] Price data loaded. Rows: {len(close_raw)}, Cols: {len(close_raw.columns)}")
 
@@ -446,4 +466,15 @@ with open(OUTPUT, "w") as f:
     json.dump(output, f, indent=2, default=str)
 
 print(f"\n[{datetime.now():%H:%M:%S}] DONE! dashboard_all.json written.")
+
+# Push the All-ETFs dashboard to Supabase (public site bucket) so the live
+# "All ETFs" tab updates WITHOUT a Netlify deploy. No-op without creds.
+try:
+    import supabase_store as _sb
+    if _sb.enabled():
+        print(f"[{datetime.now():%H:%M:%S}] Supabase: dashboard_all.json synced."
+              if _sb.upload_site(OUTPUT)
+              else f"[{datetime.now():%H:%M:%S}] Supabase: dashboard_all.json sync FAILED.")
+except Exception as _e:
+    print(f"[{datetime.now():%H:%M:%S}] Supabase all-sync skipped ({_e}).")
 print(f"   ETFs processed : {len(results)}")

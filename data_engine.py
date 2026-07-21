@@ -69,6 +69,13 @@ with open(ETF_LIST) as f:
 # Load cached YF Profiles
 YF_PROFILES = {}
 YF_FILE = os.path.join(BASE_DIR, "yf_profiles.json")
+# Pull the latest profiles cache from Supabase before reading (no-op without creds)
+try:
+    import supabase_store as _sb
+    if _sb.enabled():
+        _sb.download_file("nav/yf_profiles.json", YF_FILE)
+except Exception:
+    pass
 if os.path.exists(YF_FILE):
     try:
         with open(YF_FILE) as f:
@@ -90,6 +97,20 @@ if BENCHMARK not in tickers:
 
 print(f"[{datetime.now():%H:%M:%S}] Fetching price data for {len(tickers)} ETFs...")
 print("This may take 1-3 minutes on first run.\n")
+
+# ── Pull the latest Parquet cache from Supabase (source of truth) ─────────────
+# If Supabase creds are present, the freshest cache lives there — download it so
+# the load below reads it. Falls back silently to the local file if unavailable,
+# so a plain local run without .env behaves exactly as before.
+try:
+    import supabase_store as _sb
+    if _sb.enabled():
+        _r = _sb.download_file("nav/nav_core_raw.parquet", CACHE_RAW)
+        _a = _sb.download_file("nav/nav_core_adj.parquet", CACHE_ADJ)
+        print(f"[{datetime.now():%H:%M:%S}] Supabase: pulled Parquet cache." if (_r and _a)
+              else f"[{datetime.now():%H:%M:%S}] Supabase: no remote cache yet; using local if present.")
+except Exception as _e:
+    print(f"[{datetime.now():%H:%M:%S}] Supabase pull skipped ({_e}); using local cache.")
 
 # ── Load or Create Cache ──────────────────────────────────────────────────────
 close_raw = pd.DataFrame()
@@ -289,6 +310,17 @@ try:
     print(f"[{datetime.now():%H:%M:%S}] Parquet caches updated and saved to disk.")
 except Exception as e:
     print(f"[{datetime.now():%H:%M:%S}] Cache write error: {e}")
+
+# ── Push the updated Parquet cache back to Supabase ───────────────────────────
+try:
+    import supabase_store as _sb
+    if _sb.enabled():
+        _u1 = _sb.upload_file(CACHE_RAW, "nav/nav_core_raw.parquet")
+        _u2 = _sb.upload_file(CACHE_ADJ, "nav/nav_core_adj.parquet")
+        print(f"[{datetime.now():%H:%M:%S}] Supabase: Parquet cache pushed." if (_u1 and _u2)
+              else f"[{datetime.now():%H:%M:%S}] Supabase: parquet push FAILED (check creds/bucket).")
+except Exception as e:
+    print(f"[{datetime.now():%H:%M:%S}] Supabase push skipped ({e}).")
 
 print(f"\n[{datetime.now():%H:%M:%S}] Price data loaded. Rows: {len(close_raw)}, Cols: {len(close_raw.columns)}")
 
@@ -534,3 +566,15 @@ try:
     print(f"[{datetime.now():%H:%M:%S}] history.json written ({len(hist_tickers)} tickers, {len(dates)} days).")
 except Exception as e:
     print(f"[{datetime.now():%H:%M:%S}] Warning: history.json write failed: {e}")
+
+# ── Push website JSON to Supabase (public site bucket) so the live site sees the
+#    update WITHOUT a Netlify deploy. No-op without creds (local run unaffected). ──
+try:
+    import supabase_store as _sb
+    if _sb.enabled():
+        _s1 = _sb.upload_site(OUTPUT)    # dashboard.json
+        _s2 = _sb.upload_site(HISTORY)   # history.json
+        print(f"[{datetime.now():%H:%M:%S}] Supabase: website JSON synced (dashboard.json, history.json)."
+              if (_s1 and _s2) else f"[{datetime.now():%H:%M:%S}] Supabase: website JSON sync FAILED.")
+except Exception as e:
+    print(f"[{datetime.now():%H:%M:%S}] Supabase site sync skipped ({e}).")

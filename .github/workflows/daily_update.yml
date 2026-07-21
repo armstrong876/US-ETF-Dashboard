@@ -1,8 +1,10 @@
 name: Daily Dashboard Update
 
 # DAILY: Batch 1 (market indices) + Batch 2 (core 80 ETFs).
-# The heavy Batch 3 (4000+ ETFs) runs on its own weekly schedule
-# (weekly_update.yml) so it can never delay or block this daily run.
+# Data is published to Supabase Storage — the engines pull/push the Parquet cache
+# and upload the website JSON to the public "site-data" bucket. There is NO git
+# commit and NO Netlify deploy, so the daily update no longer costs deploy credits.
+# The live site reads the fresh JSON from Supabase via the netlify.toml proxy.
 
 on:
   schedule:
@@ -10,14 +12,12 @@ on:
     - cron: '30 1 1 * *'    # 1st of every month at 7:00 AM IST — also refreshes fundamentals
   workflow_dispatch:          # Allows manual trigger from GitHub UI
 
-# ── CRITICAL: grant write access so the action can push updated data files ──
-permissions:
-  contents: write
-
-# Prevent the daily and weekly jobs from pushing at the same instant (both target main)
-concurrency:
-  group: dashboard-data-push
-  cancel-in-progress: false
+# Supabase credentials (stored as encrypted repo secrets) — available to every step.
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+  SUPABASE_SITE_BUCKET: ${{ secrets.SUPABASE_SITE_BUCKET }}
 
 jobs:
   update:
@@ -25,8 +25,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # full history needed so git push works on the right branch
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -36,33 +34,16 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install yfinance pandas pyarrow openpyxl
+          pip install yfinance pandas pyarrow openpyxl requests
 
-      - name: Run Daily Price Update (indices + 80 ETFs)
+      - name: Run Daily Price Update (indices + 80 ETFs) -> Supabase
         run: python auto_update.py
 
-      - name: Run Monthly Fundamentals Update (1st only)
+      - name: Run Monthly Fundamentals Update (1st only) -> Supabase
         if: ${{ github.event_name == 'schedule' && startsWith(github.event.schedule, '30 1 1') }}
         run: |
           echo "Running monthly fundamentals refresh (1st of month)..."
           python update_fundamentals.py
 
-      - name: Commit and push updated data files
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          # Daily job owns: core 80-ETF dashboard, the price-history chart data,
-          # the version-robust core Parquet cache, and (on the 1st) fundamentals.
-          git add dashboard.json history.json \
-                  nav_core_raw.parquet nav_core_adj.parquet \
-                  etf_analytics.json \
-                  yf_profiles.json || true
-          git diff --cached --quiet && echo "No changes to commit" && exit 0
-          # NOTE: no "[skip ci]" — Netlify treats that tag as "skip this deploy",
-          # which was silently blocking the live site from ever updating. These
-          # workflows only trigger on schedule/dispatch (never on push), so there
-          # is no self-trigger loop to guard against.
-          git commit -m "Daily auto-update: indices + 80 ETFs"
-          # Rebase on any concurrent weekly push before pushing, then retry once.
-          git pull --rebase origin main || true
-          git push || (git pull --rebase origin main && git push)
+      - name: Done
+        run: echo "Data published to Supabase Storage. No git commit / no Netlify deploy."

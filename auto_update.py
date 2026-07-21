@@ -26,7 +26,7 @@ def run_update():
         except Exception as e:
             print(f"[{datetime.now():%H:%M:%S}] (non-fatal) etf_analytics_engine failed: {e}")
 
-        print(f"[{datetime.now():%H:%M:%S}] Daily update complete. GitHub Action will commit and push the new data files.")
+        print(f"[{datetime.now():%H:%M:%S}] Daily update complete. Data published to Supabase (no git push / no Netlify deploy).")
 
     except Exception as e:
         print(f"[{datetime.now():%H:%M:%S}] Error running update: {e}")

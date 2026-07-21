@@ -137,3 +137,14 @@ save_json(OUTPUT, profiles)
 print(f"\n[{datetime.now():%H:%M:%S}] ✅ DONE — yf_profiles.json updated.")
 print(f"   Total records : {len(profiles)}")
 print(f"   Errors        : {sum(1 for v in profiles.values() if 'error' in v)}")
+
+# ── Push profiles cache to Supabase (private bucket) so it persists across runs
+#    without git. No-op without creds (local run unaffected). ──
+try:
+    import supabase_store as _sb
+    if _sb.enabled():
+        _ok = _sb.upload_file(OUTPUT, "nav/yf_profiles.json")
+        print(f"[{datetime.now():%H:%M:%S}] Supabase: yf_profiles.json synced." if _ok
+              else f"[{datetime.now():%H:%M:%S}] Supabase: yf_profiles.json sync FAILED.")
+except Exception as _e:
+    print(f"[{datetime.now():%H:%M:%S}] Supabase profiles sync skipped ({_e}).")

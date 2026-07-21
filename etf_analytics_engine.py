@@ -302,6 +302,16 @@ def main():
         json.dump(out, f, indent=2, default=str)
     print(f"\n[{datetime.now():%H:%M:%S}] Wrote {OUTPUT}")
 
+    # Push analytics JSON to Supabase (public site bucket) — no-op without creds
+    try:
+        import supabase_store as _sb
+        if _sb.enabled():
+            print(f"[{datetime.now():%H:%M:%S}] Supabase: etf_analytics.json synced."
+                  if _sb.upload_site(OUTPUT)
+                  else f"[{datetime.now():%H:%M:%S}] Supabase: etf_analytics.json sync FAILED.")
+    except Exception as e:
+        print(f"[{datetime.now():%H:%M:%S}] Supabase analytics sync skipped ({e}).")
+
 
 if __name__ == "__main__":
     main()
