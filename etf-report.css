@@ -1,0 +1,550 @@
+/* ═══════════════════════════════════════════════════════════
+   Armstrong Capital — ETF PDF Report stylesheet
+   etf-report.css | Styles the off-screen A4 page divs that are
+   captured (html2canvas) and assembled into the downloadable PDF.
+   Duplicates the reference factsheet's theme exactly.
+
+   Everything here is scoped under .pdf-page so it can never leak
+   into the live dashboard UI. Uses only hex/rgb colors (html2canvas
+   does not understand modern color functions like oklch).
+═══════════════════════════════════════════════════════════ */
+
+/* Park the render root far off-screen (NOT display:none — html2canvas needs
+   real layout to measure). */
+#pdfReportRoot {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  width: 794px;               /* A4 width at 96dpi */
+}
+
+.pdf-page {
+  /* A4 at 96dpi = 794 x 1123 px. Fixed so every capture is identical. */
+  width: 794px;
+  height: 1123px;
+  background: #FFFFFF;
+  color: #14213D;
+  font-family: 'Inter', -apple-system, Segoe UI, Roboto, sans-serif;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  /* inner content padding; the thin outer frame is drawn with an inset border */
+  padding: 40px 44px;
+}
+
+.pdf-page * { box-sizing: border-box; }
+
+/* Double black page frame — two lines drawn with ::before (outer) and
+   ::after (inner). html2canvas renders solid borders reliably; a real
+   CSS `double` border can render inconsistently, so two lines is safer. */
+.pdf-page::before {
+  content: "";
+  position: absolute;
+  inset: 11px;
+  border: 2px solid #000000;
+  pointer-events: none;
+}
+.pdf-page::after {
+  content: "";
+  position: absolute;
+  inset: 16px;
+  border: 1px solid #000000;
+  pointer-events: none;
+}
+
+/* ── Palette / type tokens (as literal values, reused below) ──
+   primary #0B2A78 · secondary #174EA6 · green #2E8B57 · lightGreen #DFF5E8
+   red #D9534F · lightGrey #F7F9FC · border #E5EAF2 · text #14213D · sub #6B7280 */
+
+/* ── Content-page header (pages 2-6) ── */
+.rp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #0B2A78;
+  margin-bottom: 22px;
+}
+.rp-header-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: #14213D;
+  text-transform: uppercase;
+}
+.rp-header-logo { display: flex; align-items: center; }
+.rp-header-logo img { height: 34px; max-width: 210px; object-fit: contain; }
+
+/* ── Footer ── */
+.rp-footer {
+  position: absolute;
+  left: 44px; right: 44px; bottom: 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid #E5EAF2;
+  font-size: 9px;
+  color: #6B7280;
+}
+.rp-footer strong { color: #14213D; font-weight: 700; }
+
+/* Structured "Prepared for you by" card — centered under the price card,
+   with a solid navy header band for a polished, professional look. */
+/* Absolutely pinned to a fixed spot near the page bottom (above the footer),
+   so it is ALWAYS visible inside the A4 page regardless of how tall the
+   flowing cover content renders. */
+.rp-preparedby {
+  width: 560px;
+  text-align: left;
+  background: #FFFFFF;
+  border: 1px solid #E5EAF2;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 22px rgba(11,42,120,0.07);
+}
+.rp-pb-title {
+  background: #0B2A78;
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  padding: 9px 22px;
+}
+.rp-pb-body {
+  padding: 16px 22px 18px;
+}
+.rp-pb-name { font-size: 20px; font-weight: 800; color: #0B2A78; line-height: 1.1; }
+.rp-pb-role { font-size: 10.5px; color: #6B7280; margin: 4px 0 12px; }
+.rp-pb-contact {
+  border-top: 1px solid #E5EAF2;
+  padding-top: 11px;
+  display: grid;
+  gap: 7px;
+}
+.rp-pb-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.rp-pb-row span {
+  color: #6B7280;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.rp-pb-row b { color: #14213D; font-weight: 700; }
+
+/* ── Section heading block ── */
+.rp-section-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #174EA6;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+}
+.rp-section-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: #0B2A78;
+  margin-bottom: 20px;
+}
+
+/* Sub-section label with right-aligned note (e.g. "as of 30 Jun 2025") */
+.rp-subhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1.5px solid #0B2A78;
+  padding-bottom: 6px;
+  margin: 4px 0 16px;
+}
+.rp-subhead h3 {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: #0B2A78;
+  text-transform: uppercase;
+}
+.rp-subhead .rp-subhead-note { font-size: 9.5px; color: #6B7280; }
+
+/* ══════════════════════ PAGE 1 — COVER ══════════════════════ */
+.rp-cover-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #0B2A78;
+  padding-bottom: 12px;
+}
+.rp-cover-topbar .rp-header-label { color: #14213D; }
+
+.rp-cover-body {
+  height: 928px;                 /* fixed region between the top bar and footer */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  justify-content: space-between; /* head group / price card / prepared-by spread evenly */
+  padding: 46px 0 6px;
+}
+.rp-cover-head { display: flex; flex-direction: column; align-items: center; }
+.rp-cover-logo { display: flex; align-items: center; justify-content: center; margin: 18px 0 52px; }
+.rp-cover-logo img { height: 104px; max-width: 600px; object-fit: contain; }
+
+.rp-cover-eyebrow {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #174EA6;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+.rp-cover-title {
+  font-size: 38px;
+  font-weight: 800;
+  color: #0B2A78;
+  line-height: 1.12;
+  margin-bottom: 14px;
+}
+.rp-cover-rule { width: 64px; height: 4px; background: #2E8B57; border-radius: 2px; margin-bottom: 20px; }
+.rp-cover-intro {
+  max-width: 600px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #14213D;
+}
+
+/* Cover price card */
+.rp-price-card {
+  width: 560px;
+  background: #F7F9FC;
+  border: 1px solid #E5EAF2;
+  border-radius: 14px;
+  padding: 16px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 8px 26px rgba(11,42,120,0.06);
+}
+.rp-price-left { text-align: left; }
+.rp-price-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: #174EA6; margin-bottom: 6px; }
+.rp-price-ticker { font-size: 46px; font-weight: 800; color: #0B2A78; line-height: 1; }
+.rp-price-name { font-size: 15px; font-weight: 700; color: #14213D; margin-top: 8px; }
+.rp-price-right { text-align: right; }
+.rp-price-value { font-size: 40px; font-weight: 800; color: #0B2A78; line-height: 1; }
+.rp-price-change { font-size: 14px; font-weight: 700; margin-top: 4px; }
+.rp-price-change.up { color: #2E8B57; }
+.rp-price-change.down { color: #D9534F; }
+.rp-price-asof { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; color: #6B7280; margin-top: 6px; }
+
+/* ══════════════ PAGE 2 — FUND OVERVIEW ══════════════ */
+.rp-badges { display: flex; gap: 11px; flex-wrap: wrap; margin-bottom: 30px; }
+.rp-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #174EA6;
+  text-transform: uppercase;
+  background: #F7F9FC;
+  border: 1px solid #CFE0F5;
+  border-radius: 99px;
+  padding: 9px 18px;
+}
+
+.rp-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 38px; }
+.rp-kpi {
+  background: #FFFFFF;
+  border: 1px solid #E5EAF2;
+  border-radius: 10px;
+  padding: 20px 18px 19px;
+}
+.rp-kpi-label { font-size: 9px; font-weight: 700; letter-spacing: 0.6px; color: #6B7280; text-transform: uppercase; }
+.rp-kpi-value { font-size: 30px; font-weight: 800; color: #0B2A78; margin: 12px 0 7px; line-height: 1; }
+.rp-kpi-sub { font-size: 10px; font-weight: 600; color: #2E8B57; }
+.rp-kpi-sub.muted { color: #6B7280; }
+
+.rp-block-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #0B2A78;
+  text-transform: uppercase;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #E5EAF2;
+  margin-bottom: 15px;
+}
+.rp-about { font-size: 12px; line-height: 1.95; color: #14213D; margin-bottom: 40px; }
+
+/* Key fundamentals — two-column definition grid */
+.rp-fund-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 48px; }
+.rp-fund-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px 2px;
+  border-bottom: 1px solid #EEF2F7;
+  font-size: 11.5px;
+}
+.rp-fund-row .k { color: #14213D; }
+.rp-fund-row .v { color: #0B2A78; font-weight: 700; text-align: right; }
+
+/* Callout / insight strip (the "How to read this factsheet" box) */
+.rp-callout {
+  margin-top: 34px;
+  background: #F7F9FC;
+  border-left: 3px solid #E2A02C;
+  border-radius: 0 6px 6px 0;
+  padding: 15px 18px;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: #4A5568;
+}
+.rp-callout b { color: #14213D; }
+
+/* ══════════════ PAGE 3 — PERFORMANCE & RETURNS ══════════════ */
+.rp-chart-wrap {
+  width: 100%;
+  border: 1px solid #E5EAF2;
+  border-radius: 10px;
+  padding: 14px 16px 8px;
+  background: #FFFFFF;
+}
+.rp-linechart { width: 100%; height: 236px; display: block; }
+.rp-chart-missing { padding: 60px; text-align: center; color: #6B7280; font-size: 12px; }
+
+.rp-legend { display: flex; gap: 26px; margin-top: 12px; padding-left: 4px; }
+.rp-legend span { display: flex; align-items: center; font-size: 11px; font-weight: 700; color: #14213D; }
+.rp-legend i { width: 16px; height: 4px; border-radius: 2px; margin-right: 8px; display: inline-block; }
+
+.rp-returns-table { width: 100%; border-collapse: collapse; }
+.rp-returns-table thead th {
+  background: #0B2A78;
+  color: #FFFFFF;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 10px 10px;
+  text-align: right;
+}
+.rp-returns-table thead th.rp-rt-period { text-align: left; }
+.rp-returns-table tbody td {
+  font-size: 11px;
+  padding: 11px 10px;
+  text-align: right;
+  border-bottom: 1px solid #EEF2F7;
+  color: #14213D;
+}
+.rp-returns-table tbody tr:nth-child(even) { background: #F7F9FC; }
+.rp-returns-table .rp-rt-period { text-align: left; font-weight: 700; }
+.rp-returns-table .rp-rt-strong { font-weight: 800; color: #0B2A78; }
+.rp-returns-table td.pos { color: #2E8B57; font-weight: 700; }
+.rp-returns-table td.neg { color: #D9534F; font-weight: 700; }
+
+/* ══════════════ PAGE 4 — COMPOSITION ══════════════ */
+.rp-comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.rp-comp-card {
+  border: 1px solid #E5EAF2;
+  border-radius: 10px;
+  padding: 15px 16px;
+  background: #FFFFFF;
+}
+.rp-comp-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #0B2A78;
+  margin-bottom: 12px;
+}
+
+.rp-hold-table { width: 100%; border-collapse: collapse; }
+.rp-hold-table thead th {
+  background: #0B2A78; color: #FFFFFF;
+  font-size: 8.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+  padding: 7px 8px; text-align: left;
+}
+.rp-hold-table thead th.rp-hold-wt { text-align: right; }
+.rp-hold-table tbody td { font-size: 10px; padding: 7.5px 8px; border-bottom: 1px solid #EEF2F7; color: #14213D; }
+.rp-hold-table .rp-hold-name { font-weight: 600; }
+.rp-hold-table .rp-hold-tk { color: #6B7280; }
+.rp-hold-table .rp-hold-wt { text-align: right; font-weight: 800; color: #0B2A78; }
+
+.rp-bars { display: flex; flex-direction: column; gap: 9px; }
+.rp-bar-row { display: grid; grid-template-columns: 96px 1fr 48px; align-items: center; gap: 9px; }
+.rp-bar-label { font-size: 9.5px; color: #14213D; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-bar-track { height: 12px; background: #EEF2F7; border-radius: 3px; overflow: hidden; }
+.rp-bar-fill { height: 100%; border-radius: 3px; }
+.rp-bar-val { font-size: 9.5px; font-weight: 800; color: #0B2A78; text-align: right; }
+
+.rp-empty { font-size: 10px; color: #6B7280; padding: 14px 4px; }
+
+/* ══════════════ PAGE 5 — HEATMAP & SEASONALITY ══════════════ */
+.rp-heatmap, .rp-seasonality { width: 100%; border-collapse: separate; border-spacing: 2px; }
+.rp-heatmap th, .rp-seasonality th {
+  font-size: 8px; font-weight: 700; color: #6B7280; text-transform: uppercase;
+  padding: 3px 2px; text-align: center;
+}
+.rp-heatmap td, .rp-seasonality td {
+  font-size: 8.5px; font-weight: 700; text-align: center; padding: 6px 2px;
+  border-radius: 3px;
+}
+.rp-heatmap .rp-hm-lbl, .rp-seasonality .rp-sea-yr {
+  background: #0B2A78 !important; color: #FFFFFF !important;
+  text-align: left; padding-left: 8px; font-weight: 700; font-size: 9px;
+}
+.rp-seasonality td { padding: 5px 1px; font-size: 8px; }
+.rp-sea-fy { background: #F0F3F8 !important; font-weight: 800; }
+.rp-sea-gap td { background: transparent !important; padding: 3px !important; }
+.rp-sea-avgrow .rp-sea-yr { background: #174EA6 !important; }
+.rp-fine { font-size: 8.5px; color: #6B7280; margin-top: 6px; }
+
+/* Best & worst */
+.rp-bw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.rp-bw-table { width: 100%; border-collapse: collapse; }
+.rp-bw-table thead th {
+  background: #0B2A78; color: #FFFFFF; font-size: 9px; font-weight: 700;
+  text-transform: uppercase; padding: 8px 8px; text-align: right;
+}
+.rp-bw-table thead th.rp-bw-yr { text-align: left; }
+.rp-bw-table tbody td { font-size: 10.5px; padding: 9px 8px; text-align: right; border-bottom: 1px solid #EEF2F7; }
+.rp-bw-table tbody tr:nth-child(even) { background: #F7F9FC; }
+.rp-bw-table .rp-bw-yr { text-align: left; font-weight: 700; color: #14213D; }
+.rp-bw-table .rp-bw-smh { font-weight: 800; }
+.rp-bw-table td.pos { color: #2E8B57; font-weight: 700; }
+.rp-bw-table td.neg { color: #D9534F; font-weight: 700; }
+
+.rp-bw-chartcard { border: 1px solid #E5EAF2; border-radius: 10px; padding: 14px 16px; }
+.rp-bw-bars { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.rp-bw-barrow { display: grid; grid-template-columns: 64px 1fr 52px; align-items: center; gap: 8px; }
+.rp-bw-barlabel { font-size: 9.5px; font-weight: 700; color: #14213D; }
+.rp-bw-bartrack { position: relative; height: 14px; background: #F0F3F8; border-radius: 3px; }
+.rp-bw-barmid { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #C3CAD6; }
+.rp-bw-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
+.rp-bw-bar.pos { background: #2E8B57; }
+.rp-bw-bar.neg { background: #D9534F; }
+.rp-bw-barval { font-size: 9.5px; font-weight: 800; text-align: right; }
+.rp-bw-barval.pos { color: #2E8B57; }
+.rp-bw-barval.neg { color: #D9534F; }
+.rp-bw-barnote { font-size: 8px; color: #6B7280; text-align: center; margin-top: 10px; }
+
+.rp-insight-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 18px; }
+.rp-insight {
+  background: #F7F9FC; border-left: 3px solid #0B2A78; border-radius: 0 6px 6px 0;
+  padding: 11px 13px; font-size: 9.5px; line-height: 1.55; color: #4A5568;
+}
+.rp-insight b { color: #0B2A78; }
+
+/* ── PAGE 6 — Momentum & Risk ── */
+.rp-mr-grid { display: grid; grid-template-columns: 1fr 1.35fr; gap: 14px; }
+.rp-mr-card {
+  background: #FFFFFF; border: 1px solid #E5EAF2; border-radius: 10px; padding: 15px 16px;
+}
+.rp-gauge-svg { display: block; width: 100%; max-width: 240px; height: auto; margin: 2px auto 6px; }
+.rp-gauge-num { font-size: 34px; font-weight: 800; fill: #0B2A78; }
+.rp-sig-box {
+  text-align: center; font-size: 11px; color: #14213D;
+  border-radius: 8px; padding: 8px 10px; border: 1px solid #E5EAF2; background: #F7F9FC;
+}
+.rp-sig-box b { font-weight: 800; }
+.rp-sig-box.strong { background: #EAF6EF; border-color: #BFE3CD; }
+.rp-sig-box.strong b { color: #2E8B57; }
+.rp-sig-box.neutral { background: #FFF7E6; border-color: #F1DFB0; }
+.rp-sig-box.neutral b { color: #B8860B; }
+.rp-sig-box.weak { background: #FBEBEA; border-color: #EBC4C2; }
+.rp-sig-box.weak b { color: #D9534F; }
+
+.rp-mom-table { width: 100%; border-collapse: collapse; }
+.rp-mom-table thead th {
+  background: #0B2A78; color: #FFFFFF;
+  font-size: 8.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+  padding: 7px 8px; text-align: right;
+}
+.rp-mom-table thead th:first-child { text-align: left; }
+.rp-mom-table tbody td, .rp-mom-table tfoot td {
+  font-size: 10.5px; padding: 7px 8px; text-align: right; color: #14213D;
+  border-bottom: 1px solid #EEF2F7;
+}
+.rp-mom-table td.rp-mom-p, .rp-mom-table .rp-mom-p { text-align: left; font-weight: 600; }
+.rp-mom-table tfoot td {
+  background: #F7F9FC; font-weight: 800; font-size: 11px; border-top: 2px solid #E5EAF2; border-bottom: none;
+}
+
+.rp-dd-card {
+  background: #FFFFFF; border: 1px solid #E5EAF2; border-radius: 10px; padding: 10px 12px 6px;
+}
+.rp-dd-svg { display: block; width: 100%; height: 156px; }
+.rp-dd-axis { font-size: 8px; fill: #6B7280; }
+
+.rp-risk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.rp-risk-card {
+  background: #FFFFFF; border: 1px solid #E5EAF2; border-radius: 9px; padding: 11px 12px;
+}
+.rp-risk-lbl { font-size: 8.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: #6B7280; }
+.rp-risk-val { font-size: 20px; font-weight: 800; color: #0B2A78; margin: 5px 0 3px; }
+.rp-risk-val.pos { color: #2E8B57; }
+.rp-risk-val.neg { color: #D9534F; }
+.rp-risk-sub { font-size: 8.5px; color: #6B7280; line-height: 1.35; }
+
+/* ── PAGE 7 — Thank You ── */
+.rp-ty-page { display: flex; flex-direction: column; }
+.rp-ty-inner {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 0 40px;
+}
+.rp-ty-logo img { height: 104px; width: auto; object-fit: contain; }
+.rp-ty-title { font-size: 46px; font-weight: 800; color: #0B2A78; margin-top: 30px; letter-spacing: 0.5px; }
+.rp-ty-rule { width: 66px; height: 4px; background: #2E8B57; border-radius: 3px; margin: 16px 0 18px; }
+.rp-ty-sub { font-size: 12px; color: #4A5568; line-height: 1.6; max-width: 460px; }
+.rp-ty-eyebrow {
+  font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase;
+  color: #174EA6; margin-top: 58px;
+}
+.rp-ty-contact {
+  margin-top: 14px; width: 380px; text-align: left;
+  background: #F7F9FC; border: 1px solid #E5EAF2; border-radius: 12px; padding: 16px 22px;
+}
+.rp-ty-crow {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 12px; padding: 6px 0; border-bottom: 1px solid #E9EEF6;
+}
+.rp-ty-crow:last-child { border-bottom: none; }
+.rp-ty-crow span { font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #6B7280; }
+.rp-ty-crow b { color: #14213D; font-weight: 700; }
+.rp-ty-company { margin-top: 30px; }
+.rp-ty-cname { font-size: 13px; font-weight: 800; color: #0B2A78; }
+.rp-ty-cnote { font-size: 10px; color: #6B7280; margin-top: 3px; }
+.rp-ty-disclaimer {
+  margin: auto 40px 4px;
+  background: #F7F9FC;
+  border: 1px solid #E5EAF2;
+  border-top: 3px solid #0B2A78;
+  border-radius: 8px;
+  padding: 13px 18px 14px;
+  text-align: left;
+}
+.rp-ty-disc-title {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #0B2A78;
+  margin-bottom: 6px;
+}
+.rp-ty-disclaimer p {
+  font-size: 8.5px;
+  line-height: 1.55;
+  color: #6B7280;
+  margin: 0;
+  text-align: justify;
+}
+.rp-ty-disc-foot {
+  font-size: 8px;
+  color: #94A0B4;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid #E5EAF2;
+}

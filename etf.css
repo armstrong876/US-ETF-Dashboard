@@ -594,10 +594,9 @@
   color: var(--text-primary);
 }
 
-/* Market Cap Exposure + Developed/Emerging — both are part-to-whole splits,
-   rendered as horizontal 100%-stacked bars (not donuts — see renderStackedBar
-   in etf.js). Market Cap takes ~60% of the card width, Developed/Emerging +
-   HHI/avg-mkt-cap stats take the rest, side by side. */
+/* Market Cap Exposure — a part-to-whole split rendered as a horizontal bar
+   chart. The Developed/Emerging split and the HHI / avg-mkt-cap stats that
+   used to sit beside it were removed, so the chart now takes the full card. */
 .etf-mcap-layout {
   display: flex;
   align-items: flex-start;
@@ -606,7 +605,7 @@
 }
 
 .etf-mcap-main {
-  flex: 3 1 58%;
+  flex: 1 1 100%;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -617,92 +616,6 @@
   position: relative;
   width: 100%;
   height: 180px;
-}
-
-.etf-mcap-side {
-  flex: 2 1 38%;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 240px;
-  padding-left: 28px;
-  border-left: 1px solid var(--border);
-}
-
-/* Horizontal 100%-stacked bar (Developed / Emerging) — thin, rounded ends,
-   2px surface gap between segments */
-.stacked-bar-track {
-  display: flex;
-  height: 18px;
-  width: 100%;
-  border-radius: 9px;
-  overflow: hidden;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-}
-
-.stacked-bar-seg {
-  height: 100%;
-  box-shadow: inset -2px 0 0 0 var(--bg-elevated);
-}
-
-.stacked-bar-seg:last-child {
-  box-shadow: none;
-}
-
-.stacked-bar-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* Concentration (HHI) + Wgt. Avg Mkt Cap — side by side */
-.mcap-side-stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 4px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.mcap-side-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-}
-
-.mcap-side-lbl {
-  font-size: 10px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-
-.mcap-side-val {
-  font-size: 19px;
-  font-weight: 800;
-  font-family: var(--font-mono);
-  color: var(--text-primary);
-}
-
-.mcap-side-sub {
-  font-size: 10px;
-  color: var(--text-secondary);
-}
-
-@media (max-width: 760px) {
-  .etf-mcap-side {
-    border-left: none;
-    border-top: 1px solid var(--border);
-    padding-left: 0;
-    padding-top: 16px;
-  }
 }
 
 /* Composition Not Available Msg */
@@ -871,6 +784,143 @@ body.light-theme .hm-cell-neg-1 { background: rgba(220, 38, 38, 0.08); color: #0
   font-weight: 600;
   color: var(--text-secondary);
 }
+
+/* Seasonality Avg / S&P comparison rows */
+.etf-monthly-table tr.etf-sea-gap td {
+  border: none;
+  padding: 5px 0;
+  background: transparent;
+}
+.etf-monthly-table tr.etf-sea-avg td {
+  border-top: 2px solid var(--border-bright);
+  font-weight: 700;
+}
+.etf-monthly-table tr.etf-sea-avg td.hm-row-label {
+  color: var(--text-primary);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+}
+
+/* Best & Worst calendar years — table + gain/loss bars + conclusion boxes */
+.etf-bw-block { margin-top: 30px; }
+.etf-bw-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.etf-bw-head h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.etf-bw-head span { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+.etf-bw-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 720px) { .etf-bw-grid { grid-template-columns: 1fr; } }
+
+.etf-bw-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.etf-bw-table thead th {
+  background: var(--etf-accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 10px 12px;
+  text-align: right;
+}
+.etf-bw-table thead th:first-child { text-align: left; border-top-left-radius: var(--radius-md); }
+.etf-bw-table thead th:last-child { border-top-right-radius: var(--radius-md); }
+.etf-bw-table tbody td {
+  padding: 11px 12px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+.etf-bw-table tbody tr:nth-child(even) td { background: var(--bg-elevated); }
+.etf-bw-table td.etf-bw-yr {
+  text-align: left;
+  font-family: inherit;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.etf-bw-table td.etf-bw-etf { font-weight: 800; }
+.etf-bw-table td.green { color: var(--green); }
+.etf-bw-table td.red { color: var(--red); }
+
+.etf-bw-chartcard {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+}
+.etf-bw-chart-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--etf-accent);
+  margin-bottom: 14px;
+}
+.etf-bw-barrow {
+  display: grid;
+  grid-template-columns: 58px 1fr 62px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.etf-bw-barlabel { font-size: 12px; font-weight: 700; color: var(--text-primary); }
+.etf-bw-bartrack {
+  position: relative;
+  height: 18px;
+  background: rgba(127, 140, 170, 0.10);
+  border-radius: 3px;
+}
+.etf-bw-barmid {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--border-bright);
+}
+.etf-bw-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
+.etf-bw-bar.green { background: var(--green); }
+.etf-bw-bar.red { background: var(--red); }
+.etf-bw-barval { font-size: 12px; font-weight: 800; text-align: right; font-family: var(--font-mono); }
+.etf-bw-barval.green { color: var(--green); }
+.etf-bw-barval.red { color: var(--red); }
+.etf-bw-barnote { font-size: 10px; color: var(--text-muted); text-align: center; margin-top: 8px; }
+
+.etf-bw-insights {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-top: 18px;
+}
+@media (max-width: 720px) { .etf-bw-insights { grid-template-columns: 1fr; } }
+.etf-bw-insight {
+  background: var(--bg-elevated);
+  border-left: 3px solid var(--etf-accent);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: 13px 15px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.etf-bw-insight b { color: var(--text-primary); }
 
 /* --- Risk Analysis Section --- */
 .etf-risk-grid {
@@ -1440,6 +1490,330 @@ body.light-theme .fund-card {
 
 body.light-theme .fund-icon-circle {
   background: #ffffff;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PDF DOWNLOAD FLOW — hero button, lead-capture modal
+═══════════════════════════════════════════════════════════ */
+
+.etf-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  flex-shrink: 0;
+  background: var(--etf-accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 18px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px var(--etf-accent-glow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.etf-download-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px var(--etf-accent-glow);
+}
+
+/* Lead-capture modal */
+.pdf-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+
+.pdf-modal-card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+  padding: 28px 26px 24px;
+  animation: pdfModalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pdfModalIn {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.pdf-modal-close {
+  position: absolute;
+  top: 14px; right: 14px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.pdf-modal-close:hover { color: var(--text-primary); border-color: var(--border-bright); }
+
+.pdf-modal-header { text-align: center; margin-bottom: 20px; }
+.pdf-modal-icon { font-size: 28px; display: block; margin-bottom: 8px; }
+.pdf-modal-header h3 { font-size: 16px; font-weight: 800; color: var(--text-primary); margin-bottom: 4px; }
+.pdf-modal-header p { font-size: 11px; color: var(--text-secondary); }
+
+.pdf-modal-body { display: flex; flex-direction: column; gap: 14px; }
+
+.pdf-input-group { display: flex; flex-direction: column; gap: 6px; }
+.pdf-input-group label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-muted); }
+.pdf-input-group input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.pdf-input-group input:focus { border-color: var(--etf-accent); }
+
+/* Fixed +91 country-code prefix on the mobile field */
+.pdf-phone-wrap {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+.pdf-phone-wrap:focus-within { border-color: var(--etf-accent); }
+.pdf-phone-cc {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: rgba(127, 140, 170, 0.12);
+  border-right: 1px solid var(--border-bright);
+}
+.pdf-phone-wrap input {
+  flex: 1;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+.pdf-phone-wrap input:focus { border: none !important; }
+
+.pdf-modal-error {
+  font-size: 11px;
+  color: var(--red);
+  background: var(--red-bg);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+
+.pdf-goodtogo-btn {
+  margin-top: 4px;
+  background: var(--etf-accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 13px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.pdf-goodtogo-btn:hover { transform: translateY(-1px); }
+.pdf-goodtogo-btn:active { transform: translateY(0); }
+
+/* PDF generation overlay — transparent + click-through, so the rocket flies
+   visibly over the live page instead of a darkened backdrop. */
+.pdf-status-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  pointer-events: none;
+}
+
+.pdf-status-card {
+  position: fixed;
+  left: 50%;
+  bottom: 46px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-lg);
+  padding: 14px 24px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+}
+
+.pdf-status-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--border-bright);
+  border-top-color: var(--etf-accent);
+  border-radius: 50%;
+  animation: pdfSpin 0.8s linear infinite;
+}
+
+@keyframes pdfSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Rocket sequence (4 phases, JS swaps exactly one class at a time) ──
+   1) .rocket-appear — pops in at screen-center (where "Good to go" was),
+      NO flame yet, ~0.5s.
+   2) .rocket-ignite  — flame lights, rocket stays put and shakes gently,
+      held for ~5s (a real ignition pause before liftoff).
+   3) .rocket-launch  — one fast, decisive burst to just above the top-right
+      of the window (browser download-icon area), ~0.6s.
+   4) .rocket-vanish  — holds the arrival position, fades out — fireworks
+      fire AFTER this completes, not before.
+   Each phase's 0% keyframe re-states position/rotation explicitly so there
+   is never a visual jump when JS hands off from one phase to the next. */
+.pdf-rocket-rig {
+  position: fixed;
+  bottom: 46vh;
+  right: 50%;
+  opacity: 0;
+  filter: drop-shadow(0 5px 11px rgba(0,0,0,0.45));
+}
+
+.pdf-rocket-svg { display: block; }
+
+.pdf-rocket-flame {
+  position: absolute;
+  left: 50%;
+  bottom: 1px;
+  width: 19px;
+  height: 22px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at 50% 0%, #FFEBAE 0%, #FFB020 38%, #FF6A1A 68%, rgba(255,90,0,0) 100%);
+  border-radius: 50% 50% 45% 45% / 65% 65% 35% 35%;
+  opacity: 0;
+  z-index: -1;
+  animation: pdfFlameFlicker 0.11s ease-in-out infinite alternate;
+}
+
+/* Flame is invisible during "appear" — it only lights during ignite/launch */
+.pdf-rocket-rig.rocket-ignite .pdf-rocket-flame,
+.pdf-rocket-rig.rocket-launch .pdf-rocket-flame {
+  opacity: 1;
+}
+
+@keyframes pdfFlameFlicker {
+  0%   { transform: translateX(-50%) scaleY(0.82) scaleX(0.88); }
+  100% { transform: translateX(-50%) scaleY(1.18) scaleX(1.1); }
+}
+
+/* Phase 1 — appear at center, no fire */
+.pdf-rocket-rig.rocket-appear {
+  animation: pdfRocketAppear 0.5s ease-out forwards;
+}
+
+@keyframes pdfRocketAppear {
+  0%   { bottom: 46vh; right: 50%; opacity: 0; transform: scale(0.6) rotate(0deg); }
+  100% { bottom: 46vh; right: 50%; opacity: 1; transform: scale(1)   rotate(0deg); }
+}
+
+/* Phase 2 — ignition hold: stationary, flame on, a subtle continuous shake
+   (JS holds this class for ~5s before switching to launch) */
+.pdf-rocket-rig.rocket-ignite {
+  bottom: 46vh;
+  right: 50%;
+  opacity: 1;
+  animation: pdfRocketShake 0.13s ease-in-out infinite;
+}
+
+@keyframes pdfRocketShake {
+  0%   { transform: rotate(-1.2deg) translateX(-1px); }
+  50%  { transform: rotate(1.2deg)  translateX(1px); }
+  100% { transform: rotate(-1.2deg) translateX(-1px); }
+}
+
+/* Phase 3 — one fast, decisive launch to just above the browser's
+   download-icon area (top-right) */
+.pdf-rocket-rig.rocket-launch {
+  animation: pdfRocketLaunch 0.6s cubic-bezier(0.55, 0, 0.85, 0.35) forwards;
+}
+
+@keyframes pdfRocketLaunch {
+  0%   { bottom: 46vh; right: 50%; opacity: 1; transform: scale(1) rotate(0deg); }
+  100% { bottom: 92vh; right: 3%;  opacity: 1; transform: scale(1) rotate(44deg); }
+}
+
+/* Phase 4 — holds the arrival position (no jump), fades out. Fireworks are
+   spawned by JS only AFTER this animation completes. */
+.pdf-rocket-rig.rocket-vanish {
+  animation: pdfRocketVanish 0.3s ease-in forwards;
+}
+
+@keyframes pdfRocketVanish {
+  0%   { bottom: 92vh; right: 3%; opacity: 1; transform: scale(1)   rotate(44deg); }
+  100% { bottom: 92vh; right: 3%; opacity: 0; transform: scale(0.5) rotate(44deg); }
+}
+
+/* Firework bursts — bright expanding flash + particle trails, spawned by
+   JS at the rocket's fixed arrival point, after it lands. */
+.pdf-firework-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pdf-firework {
+  position: fixed;
+  width: 0;
+  height: 0;
+}
+
+.pdf-firework-flash {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #FFFFFF 0%, var(--fw-color, #FFD700) 40%, rgba(255,255,255,0) 72%);
+  animation: pdfFireworkFlash 0.5s cubic-bezier(0.1, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes pdfFireworkFlash {
+  0%   { transform: scale(0.2); opacity: 1; }
+  100% { transform: scale(11); opacity: 0; }
+}
+
+.pdf-firework-particle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--fw-color, #FFD700);
+  box-shadow: 0 0 12px 3px var(--fw-color, #FFD700);
+  animation: pdfFireworkBurst 1.1s cubic-bezier(0.12, 0.7, 0.25, 1) forwards;
+}
+
+@keyframes pdfFireworkBurst {
+  0%   { transform: translate(0, 0) scale(1);   opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translate(var(--fw-x), var(--fw-y)) scale(0.15); opacity: 0; }
 }
 
 body.light-theme .risk-metric-card,

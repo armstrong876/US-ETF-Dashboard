@@ -87,20 +87,36 @@ function parseQueryString() {
   symbol = (params.get('symbol') || '').toUpperCase().trim();
 }
 
-// Set up UI theme
-function initTheme() {
-  const isLight = localStorage.getItem('theme') === 'light';
-  if (isLight) {
-    document.body.classList.add('light-theme');
-    const toggleBtn = document.getElementById('themeToggleBtn');
-    if (toggleBtn) toggleBtn.textContent = '🌙 Dark Mode';
+// Set up UI theme.
+// THEME_KEY is shared by every page (screener, report directory, one-pager) so a
+// choice made anywhere applies everywhere. This page used to store it under
+// 'theme' on its own, which is why the setting never carried across; the old key
+// is still read once so an existing preference is not lost.
+const THEME_KEY = 'dashboard_theme';
+const THEME_KEY_LEGACY = 'theme';
+
+function readTheme() {
+  try {
+    return localStorage.getItem(THEME_KEY) || localStorage.getItem(THEME_KEY_LEGACY) || 'dark';
+  } catch (e) {
+    return 'dark';
   }
+}
+
+function initTheme() {
+  const isLight = readTheme() === 'light';
+  document.body.classList.toggle('light-theme', isLight);
+  const toggleBtn = document.getElementById('themeToggleBtn');
+  if (toggleBtn) toggleBtn.textContent = isLight ? '🌙 Dark Mode' : '☀️ Light Mode';
 }
 
 // Toggle light/dark theme
 function toggleEtfTheme() {
   const isLight = document.body.classList.toggle('light-theme');
-  localStorage.setItem('theme', isLight ? 'light' : 'dark');
+  try {
+    localStorage.setItem(THEME_KEY, isLight ? 'light' : 'dark');
+    localStorage.removeItem(THEME_KEY_LEGACY);   // migrated
+  } catch (e) { /* private mode */ }
   const toggleBtn = document.getElementById('themeToggleBtn');
   if (toggleBtn) toggleBtn.textContent = isLight ? '🌙 Dark Mode' : '☀️ Light Mode';
   
@@ -108,6 +124,37 @@ function toggleEtfTheme() {
   renderPriceChart();
   renderCompositionCharts();
   renderRiskCharts();
+}
+
+// Market-cap tier labels (etfdb bands) — ONE source of truth so the thresholds
+// read identically on the one-pager, the PDF, and (later) the portfolio builder.
+const MCAP_LABEL = {
+  Large: 'Large (>$12.9B)',
+  Mid:   'Mid (>$2.7B)',
+  Small: 'Small (>$600M)',
+  Micro: 'Micro (<$600M)',
+};
+
+// Adapt a per-ETF details file (etfdb — details/{SYMBOL}.json) into the legacy
+// composition shape the renderers already expect. Applies to all 80 ETFs.
+function adaptDetailFile(d) {
+  if (!d) return null;
+  const toList = (obj, keyName) =>
+    Object.entries(obj || {}).map(([k, v]) => ({ [keyName]: k, pct: v }));
+  return {
+    name: d.name,
+    asset_class: d.asset_class,
+    category: d.category,
+    has_breakdown: d.has_breakdown,
+    as_of: d.as_of,                          // month-end the holdings represent (authoritative)
+    last_updated: d.fetched_on || d.as_of,   // when we scraped it
+    sector_holdings: toList(d.sector, 'sector'),
+    country_exposure: toList(d.country, 'country'),
+    market_cap: Object.entries(d.market_cap || {}).map(([k, v]) => ({ cap: MCAP_LABEL[k] || k, pct: v })),
+    top10_holdings: (d.holdings || []).map((h, i) => ({
+      rank: i + 1, ticker: h.sym, name: h.name, weight: h.wt, sector: ''
+    })),
+  };
 }
 
 // Fetch all required data sources
@@ -131,6 +178,17 @@ async function loadAllData() {
     } else {
       console.warn('etf_detail_data.json not found, using fallbacks');
       detailDb = {};
+    }
+
+    // 3b. Per-ETF composition file (etfdb — details/{SYMBOL}.json). Primary
+    //     source covering all 80 ETFs; merged over any legacy entry above.
+    try {
+      const dres = await fetch('details/' + symbol + '.json?nocache=' + Date.now());
+      if (dres.ok) {
+        detailDb[symbol] = Object.assign({}, detailDb[symbol], adaptDetailFile(await dres.json()));
+      }
+    } catch (e) {
+      console.warn('per-ETF details not found for', symbol, e);
     }
 
     // 4. Fetch etf_analytics.json (Monthly Returns + Risk Analysis + real NDX returns)
@@ -268,6 +326,14 @@ function populateFundamentals() {
   const grid = document.getElementById('fundamentalsGrid');
   const meta = detailDb[symbol];
 
+  // Top-10 concentration = sum of the top-10 holdings' weights (from the etfdb
+  // composition we already load) — derived here, NOT fetched separately. Falls
+  // back to whatever etfObj carries if the per-ETF holdings aren't available.
+  const top10List = (meta && Array.isArray(meta.top10_holdings)) ? meta.top10_holdings.slice(0, 10) : [];
+  const top10Sum = top10List.length ? top10List.reduce((s, h) => s + (h.weight || 0), 0) : null;
+  const top10Val = top10Sum != null ? `${top10Sum.toFixed(1)}%`
+                 : (etfObj.top10_pct != null ? `${etfObj.top10_pct.toFixed(1)}%` : '—');
+
   const cards = [
     { label: 'Total Assets (AUM)', val: formatAUM(etfObj.aum), desc: 'Total market capitalization value of asset base under management.', icon: '🏦' },
     { label: 'Expense Ratio', val: etfObj.er != null ? `${etfObj.er.toFixed(2)}%` : '—', desc: 'Annual operational fee charged to fund shareholders.', icon: '💸' },
@@ -275,7 +341,7 @@ function populateFundamentals() {
     { label: 'Portfolio Beta', val: etfObj.beta != null ? etfObj.beta.toFixed(2) : '—', desc: 'Systemic risk factor showing sensitivity relative to S&P 500.', icon: '⚖️' },
     { label: 'Dividend Yield', val: etfObj.yield != null ? `${(etfObj.yield * 100).toFixed(2)}%` : '—', desc: 'Trailing twelve months yield paid out as distributions.', icon: '💰' },
     { label: 'Total Stock Holdings', val: etfObj.holdings || '—', desc: 'Count of unique asset components held inside the ETF container.', icon: '📂' },
-    { label: 'Top 10 Concentration', val: etfObj.top10_pct != null ? `${etfObj.top10_pct.toFixed(1)}%` : '—', desc: 'Cumulative weight percentage held by the top 10 largest positions.', icon: '🎯' },
+    { label: 'Top 10 Concentration', val: top10Val, desc: 'Cumulative weight of the top 10 holdings (summed from their weights).', icon: '🎯' },
     { label: 'Inception Date', val: etfObj.inception || '—', desc: 'Official date the fund was registered and opened for public trading.', icon: '📅' }
   ];
 
@@ -377,8 +443,9 @@ function populateComposition() {
   const naMsg = document.getElementById('compositionNA');
   const meta = detailDb[symbol];
 
-  // If no composition metadata is defined in etf_detail_data.json, show message
-  if (!meta || !meta.sector_holdings) {
+  // If no composition breakdown exists (e.g. commodity funds like GLD/SLV),
+  // show the "not available" message and skip the donuts/bars.
+  if (!meta || !meta.sector_holdings || !meta.sector_holdings.length) {
     grid.style.display = 'none';
     naMsg.style.display = 'flex';
     return;
@@ -390,94 +457,29 @@ function populateComposition() {
   // "As of" date for holdings — shown month-end (ETF holdings are conventionally
   // reported as of month-end). Derived from the composition data's last_updated.
   const compAsOf = document.getElementById('compositionAsOf');
-  if (compAsOf) compAsOf.textContent = 'Holdings as of ' + lastMonthEndLabel(meta.last_updated);
+  if (compAsOf) compAsOf.textContent = 'Holdings as of ' + holdingsAsOfLabel(meta);
 
   // Render donut legends (Sector / Country — many categories, donut is the
   // right form here since no single slice dominates the way market-cap does)
   renderDonutLegend('sectorLegend', meta.sector_holdings, 'sector');
   renderDonutLegend('countryLegend', meta.country_exposure, 'country');
 
-  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--etf-accent').trim() || '#3b82f6';
-
-  // Developed / Emerging Markets — a binary split, so this is exactly the
-  // "pie of 2 slices" case to avoid; keep it a compact 100%-stacked bar.
-  const side = document.getElementById('mcapSide');
-  if (side) {
-    const hasDevEm = meta.developed_markets_pct != null && meta.emerging_markets_pct != null;
-    if (hasDevEm) {
-      const devEmList = [
-        { label: 'Developed Mkts.', pct: meta.developed_markets_pct },
-        { label: 'Emerging Mkts.', pct: meta.emerging_markets_pct },
-      ];
-      renderStackedBar('devEmStackedBar', devEmList, 'label', [accentColor, '#64748b']);
-      document.getElementById('devEmLegend').innerHTML = renderBarLegend(devEmList, 'label', [accentColor, '#64748b']);
-    } else {
-      document.getElementById('devEmStackedBar').innerHTML = '';
-      document.getElementById('devEmLegend').innerHTML = '';
-    }
-
-    // Concentration (HHI) + Wgt. Avg Mkt Cap — side by side
-    const statRows = [];
-    if (meta.concentration_hhi != null) statRows.push({ lbl: 'Concentration (HHI)', val: meta.concentration_hhi.toFixed(0), sub: hhiNote(meta.concentration_hhi) });
-    if (meta.weighted_avg_market_cap) statRows.push({ lbl: 'Wgt. Avg Mkt Cap', val: formatMillionsUsd(meta.weighted_avg_market_cap), sub: 'Weighted average' });
-
-    document.getElementById('mcapSideStats').innerHTML = statRows.map(r => `
-      <div class="mcap-side-stat">
-        <span class="mcap-side-lbl">${r.lbl}</span>
-        <span class="mcap-side-val">${r.val}</span>
-        ${r.sub ? `<span class="mcap-side-sub">${r.sub}</span>` : ''}
-      </div>
-    `).join('');
-  }
-
   // Sector / Country donuts + Market Cap horizontal bar (Chart.js)
   renderCompositionCharts();
 }
 
-// etfrc reports weighted-avg market cap in millions as a "$1,545,461" string.
-// Compact it to $1.55T / $845.2B etc.
-function formatMillionsUsd(raw) {
-  if (raw == null) return '—';
-  const millions = parseFloat(String(raw).replace(/[$,]/g, ''));
-  if (isNaN(millions)) return String(raw);
-  const v = millions * 1e6;
-  if (v >= 1e12) return `$${(v / 1e12).toFixed(2)}T`;
-  if (v >= 1e9)  return `$${(v / 1e9).toFixed(1)}B`;
-  if (v >= 1e6)  return `$${(v / 1e6).toFixed(1)}M`;
-  return `$${v.toLocaleString()}`;
-}
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
 
-// Horizontal 100%-stacked bar — the correct form for part-to-whole data,
-// especially when one category dominates (where a donut/pie reads as an
-// near-empty ring instead of conveying the split).
-function renderStackedBar(elementId, items, keyName, colors) {
-  const el = document.getElementById(elementId);
-  if (!el) return;
-  const total = items.reduce((s, it) => s + (it.pct || 0), 0) || 1;
-  el.innerHTML = items
-    .filter(it => it.pct > 0)
-    .map((it, i) => `<div class="stacked-bar-seg" style="width:${(it.pct / total * 100).toFixed(2)}%; background:${colors[i]};" title="${it[keyName]}: ${it.pct.toFixed(1)}%"></div>`)
-    .join('');
-}
-
-function renderBarLegend(items, keyName, colors) {
-  return items.map((it, i) => `
-    <div class="legend-item">
-      <div class="legend-left">
-        <span class="legend-color-dot" style="background-color: ${colors[i]};"></span>
-        <span class="legend-name">${it[keyName]}</span>
-      </div>
-      <span class="legend-val">${it.pct.toFixed(1)}%</span>
-    </div>
-  `).join('');
-}
-
-// Herfindahl-Hirschman Index (sum of squared weights, 0-10000) — standard
-// concentration read: <1500 diversified, 1500-2500 moderate, >2500 concentrated
-function hhiNote(hhi) {
-  if (hhi < 1500) return 'Diversified';
-  if (hhi < 2500) return 'Moderately concentrated';
-  return 'Highly concentrated';
+// Label for the composition block. Uses the data's OWN as_of, which the details
+// engine already stamped with the last completed month-end — so the label always
+// matches the stored snapshot and updates itself every month. Parsed by hand
+// (not new Date()) because "2026-08-31" would be read as UTC midnight and could
+// slip back a day in a negative-offset timezone.
+function holdingsAsOfLabel(meta) {
+  const m = meta && meta.as_of && String(meta.as_of).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return MONTH_NAMES[Number(m[2]) - 1] + ' ' + Number(m[3]) + ', ' + m[1];
+  return lastMonthEndLabel(meta && meta.last_updated);   // fallback for legacy files
 }
 
 // Most recent completed month-end on/before the given date, formatted like
@@ -512,9 +514,9 @@ function populateTop10Holdings() {
   const headerText = document.getElementById('top10Concentration');
   const meta = detailDb[symbol];
 
-  if (!meta || !meta.top10_holdings) {
-    headerText.textContent = etfObj.top10_pct != null 
-      ? `Top 10 concentration is ${etfObj.top10_pct.toFixed(2)}% of portfolio assets.` 
+  if (!meta || !meta.top10_holdings || !meta.top10_holdings.length) {
+    headerText.textContent = etfObj.top10_pct != null
+      ? `Top 10 concentration is ${etfObj.top10_pct.toFixed(2)}% of portfolio assets.`
       : 'Top holdings information not available.';
     container.innerHTML = `
       <div class="etf-na-msg" style="grid-column: 1 / -1;">
@@ -525,7 +527,8 @@ function populateTop10Holdings() {
     return;
   }
 
-  headerText.textContent = `Cumulative weight: ${etfObj.top10_pct ? etfObj.top10_pct.toFixed(2) : '—'}% of total net assets.`;
+  const cumWeight = meta.top10_holdings.reduce((s, h) => s + (h.weight || 0), 0);
+  headerText.textContent = `Top ${meta.top10_holdings.length} holdings — ${cumWeight.toFixed(1)}% of net assets.`;
 
   container.innerHTML = meta.top10_holdings.map(h => `
     <div class="holding-card">
@@ -534,7 +537,7 @@ function populateTop10Holdings() {
         <span class="holding-weight">${h.weight.toFixed(2)}%</span>
       </div>
       <div class="holding-name" title="${h.name}">${h.name}</div>
-      <div class="holding-sector">${h.sector}</div>
+      ${h.sector ? `<div class="holding-sector">${h.sector}</div>` : ''}
     </div>
   `).join('');
 }
@@ -834,7 +837,7 @@ function getPriceChartData() {
 // Draw Portfolio composition Donut rings (Sectors & Countries)
 function renderCompositionCharts() {
   const meta = detailDb[symbol];
-  if (!meta || !meta.sector_holdings) return;
+  if (!meta || !meta.sector_holdings || !meta.sector_holdings.length) return;
 
   const isLight = document.body.classList.contains('light-theme');
   const borderCol = isLight ? '#ffffff' : '#1a1f2e';
@@ -1009,7 +1012,7 @@ function populateMonthlyReturns() {
 
   const years = Object.keys(calendar).map(Number).sort((a, b) => b - a); // most recent first
 
-  body.innerHTML = years.map(y => {
+  const yearRowsHtml = years.map(y => {
     const months = calendar[y] || {};
     const monthCells = MONTH_ABBR.map(m => {
       const val = months[m];
@@ -1022,9 +1025,142 @@ function populateMonthlyReturns() {
     return `<tr><td class="hm-row-label">${y}</td>${monthCells}${totalCell}</tr>`;
   }).join('');
 
+  // ── Avg + S&P 500 comparison rows (same engine the PDF uses) ──
+  // Both averages are computed over the SAME window (years where S&P daily
+  // history is available) so the two rows are directly comparable.
+  const etfByYear = (typeof rpSmhByYear === 'function') ? rpSmhByYear(calendar) : {};
+  const spyMe = (typeof rpMonthEnd === 'function') ? rpMonthEnd({ historyData }, 'SPY') : null;
+  const spyByYear = (typeof rpMonthlyByYear === 'function') ? rpMonthlyByYear(spyMe) : {};
+  const spyAnnual = (typeof rpAnnualReturns === 'function') ? rpAnnualReturns(spyMe) : {};
+  const commonYears = years.map(String).filter(y => spyByYear[y]);
+  const pick = obj => { const o = {}; commonYears.forEach(y => { if (obj[y]) o[y] = obj[y]; }); return o; };
+
+  const etfAvg = commonYears.length ? rpMonthlyAvg(pick(etfByYear)) : null;
+  let avgRowsHtml = '';
+  if (commonYears.length) {
+    const spyAvg = rpMonthlyAvg(pick(spyByYear));
+    const etfFyAvg = avgOf(commonYears.map(y => (totals ? totals[y] : null)));
+    const spyFyAvg = avgOf(commonYears.map(y => spyAnnual[y]));
+    const avgCell = v => v == null ? `<td class="hm-cell-neu">—</td>`
+      : `<td class="${getHeatmapCellClass(v)}">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</td>`;
+    const fyAvgCell = v => v == null ? `<td class="hm-row-label">—</td>`
+      : `<td class="hm-row-label ${v >= 0 ? 'green' : 'red'}" style="font-weight:700;">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</td>`;
+    const avgRow = (label, arr, fy) =>
+      `<tr class="etf-sea-avg"><td class="hm-row-label">${label}</td>${arr.map(avgCell).join('')}${fyAvgCell(fy)}</tr>`;
+    avgRowsHtml =
+      `<tr class="etf-sea-gap"><td colspan="14"></td></tr>` +
+      avgRow('S&P 500 Avg', spyAvg, spyFyAvg) +
+      avgRow(`${symbol} Avg`, etfAvg, etfFyAvg);
+  }
+
+  body.innerHTML = yearRowsHtml + avgRowsHtml;
+
   footer.textContent = asOf
-    ? `Latest calendar month reflects month-to-date return as of ${asOf} (synced with the daily screener update). Completed months reflect the full return through each month's final trading day.`
+    ? `Latest calendar month reflects month-to-date return as of ${asOf} (synced with the daily screener update). Completed months reflect the full return through each month's final trading day.${commonYears.length ? ` Avg rows = mean across ${commonYears.length} years with S&P 500 history for a like-for-like comparison.` : ''}`
     : '';
+
+  renderSeasonalityBestWorst(years, totals, spyAnnual, asOf, etfAvg);
+}
+
+// Best & Worst calendar years block — identical layout & math to the PDF
+// factsheet (table + gain/loss bars + 3 conclusion boxes), fully dynamic.
+function renderSeasonalityBestWorst(years, totals, spyAnnual, asOf, etfAvg) {
+  const wrap = document.getElementById('seasonalityBestWorst');
+  if (!wrap) return;
+  if (!totals || !years.length) { wrap.innerHTML = ''; return; }
+
+  const pct = (v, dp) => (v == null || isNaN(v)) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(dp == null ? 1 : dp) + '%';
+
+  // Most recent 6 calendar years, newest first (matches the factsheet).
+  const bwYears = years.slice(0, 6);
+  const curYear = asOf ? parseInt(String(asOf).slice(0, 4), 10) : new Date().getFullYear();
+  const curMon = asOf ? MONTH_ABBR[parseInt(String(asOf).slice(5, 7), 10) - 1] : null;
+
+  const rows = bwYears.map(y => {
+    const etf = totals[y] != null ? totals[y] : null;
+    const spy = spyAnnual[String(y)] != null ? spyAnnual[String(y)] : null;
+    const ex = (etf != null && spy != null) ? etf - spy : null;
+    const isYtd = (y === curYear);
+    return {
+      y, etf, spy, ex, isYtd,
+      tLabel: isYtd ? `${y} (YTD${curMon ? ', ' + curMon : ''})` : String(y),
+      bLabel: isYtd ? `${y} YTD` : String(y),
+    };
+  });
+  const withEtf = rows.filter(r => r.etf != null);
+  if (!withEtf.length) { wrap.innerHTML = ''; return; }
+
+  // Table
+  const tableRows = rows.map(r => `<tr>
+    <td class="etf-bw-yr">${r.tLabel}</td>
+    <td class="etf-bw-etf ${r.etf >= 0 ? 'green' : 'red'}">${pct(r.etf)}</td>
+    <td>${pct(r.spy)}</td>
+    <td class="${r.ex >= 0 ? 'green' : 'red'}">${pct(r.ex)}</td>
+  </tr>`).join('');
+
+  // Gain / loss bars centred at 0
+  const maxAbs = Math.max(10, ...withEtf.map(r => Math.abs(r.etf)));
+  const half = 50;
+  const bars = rows.map(r => {
+    const v = r.etf || 0;
+    const w = Math.min(half, (Math.abs(v) / maxAbs) * half);
+    const pos = v >= 0;
+    return `<div class="etf-bw-barrow">
+      <div class="etf-bw-barlabel">${r.bLabel}</div>
+      <div class="etf-bw-bartrack">
+        <div class="etf-bw-barmid"></div>
+        <div class="etf-bw-bar ${pos ? 'green' : 'red'}" style="left:${pos ? half : half - w}%;width:${w}%;"></div>
+      </div>
+      <div class="etf-bw-barval ${pos ? 'green' : 'red'}">${pct(v)}</div>
+    </div>`;
+  }).join('');
+
+  // Dynamic conclusion boxes
+  const posCount = withEtf.filter(r => r.etf >= 0).length;
+  const downCount = withEtf.length - posCount;
+  const best = withEtf.reduce((a, b) => (b.etf > a.etf ? b : a));
+  const worst = withEtf.reduce((a, b) => (b.etf < a.etf ? b : a));
+
+  const consistencyTail =
+    downCount === 0 ? ', with every year finishing in the green'
+    : downCount === 1 ? `, with ${worst.y} the only down year (${pct(worst.etf)})`
+    : `, with ${worst.y} the weakest (${pct(worst.etf)})`;
+
+  let seasonalText = 'Monthly seasonality builds as more calendar history accumulates.';
+  if (etfAvg && etfAvg.some(v => v != null)) {
+    const ranked = etfAvg.map((v, i) => ({ v, i })).filter(o => o.v != null).sort((a, b) => b.v - a.v);
+    const s1 = ranked[0], s2 = ranked[1], weak = ranked[ranked.length - 1];
+    const strongTxt = s2 ? `${MONTH_ABBR[s1.i]} and ${MONTH_ABBR[s2.i]} have historically been the strongest months`
+                         : `${MONTH_ABBR[s1.i]} has historically been the strongest month`;
+    seasonalText = `${strongTxt}; ${MONTH_ABBR[weak.i]} is the weakest on average.`;
+  }
+
+  const beta = (typeof etfObj !== 'undefined' && etfObj && etfObj.beta != null) ? etfObj.beta : null;
+  const character = beta != null && beta > 1.1 ? 'high-beta, cyclical' : beta != null && beta < 0.9 ? 'defensive' : 'cyclical';
+
+  wrap.innerHTML = `
+    <div class="etf-bw-head">
+      <h3>Best &amp; Worst Calendar Years</h3>
+      <span>${symbol} annual total return vs S&amp;P 500</span>
+    </div>
+    <div class="etf-bw-grid">
+      <div class="etf-bw-tablewrap">
+        <table class="etf-bw-table">
+          <thead><tr><th>Year</th><th>${symbol}</th><th>S&amp;P 500</th><th>Excess vs S&amp;P</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+      <div class="etf-bw-chartcard">
+        <div class="etf-bw-chart-title">${symbol} Annual Return — Gain / Loss</div>
+        <div class="etf-bw-bars">${bars}</div>
+        <div class="etf-bw-barnote">Bars centred at 0% · green = gain, red = loss</div>
+      </div>
+    </div>
+    <div class="etf-bw-insights">
+      <div class="etf-bw-insight"><b>Consistency.</b> ${symbol} finished positive in ${posCount} of the last ${withEtf.length} calendar years${consistencyTail}.</div>
+      <div class="etf-bw-insight"><b>Seasonal edge.</b> ${seasonalText}</div>
+      <div class="etf-bw-insight"><b>Amplitude.</b> Annual outcomes are wide — from ${pct(best.etf)} (${best.y}) to ${pct(worst.etf)} (${worst.y}) — underscoring the fund's ${character} character.</div>
+    </div>`;
 }
 
 // ── RISK ANALYSIS ──────────────────────────────────────────
@@ -1361,6 +1497,178 @@ window.toggleCompareIndex = function(key) {
   }
   renderPriceChart();
 };
+
+// ── PDF DOWNLOAD FLOW: Download button -> lead-capture modal -> Good to Go -> PDF ──
+
+window.openPdfLeadModal = function() {
+  document.getElementById('pdfModalError').style.display = 'none';
+  document.getElementById('pdfLeadModal').style.display = 'flex';
+  document.getElementById('pdfRmName').focus();
+};
+
+window.closePdfLeadModal = function() {
+  document.getElementById('pdfLeadModal').style.display = 'none';
+};
+
+window.handlePdfModalOverlayClick = function(e) {
+  if (e.target.id === 'pdfLeadModal') closePdfLeadModal();
+};
+
+window.handleGoodToGo = async function() {
+  const name = document.getElementById('pdfRmName').value.trim();
+  const mobile = document.getElementById('pdfRmMobile').value.trim();
+  const email = document.getElementById('pdfRmEmail').value.trim();
+  const errBox = document.getElementById('pdfModalError');
+
+  if (!name || !mobile || !email) {
+    errBox.textContent = 'Please fill in all three fields.';
+    errBox.style.display = 'block';
+    return;
+  }
+  const mobileDigits = mobile.replace(/\D/g, '');
+  if (mobileDigits.length !== 10) {
+    errBox.textContent = 'Mobile number must be exactly 10 digits.';
+    errBox.style.display = 'block';
+    return;
+  }
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!emailOk) {
+    errBox.textContent = 'Please enter a valid email address.';
+    errBox.style.display = 'block';
+    return;
+  }
+  errBox.style.display = 'none';
+
+  closePdfLeadModal();
+  await generateAndDownloadPdf({ name, mobile: '+91 ' + mobileDigits, email });
+};
+
+// Esc closes the lead modal too
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') {
+    const m = document.getElementById('pdfLeadModal');
+    if (m && m.style.display !== 'none') closePdfLeadModal();
+  }
+});
+
+// Rocket sequence timing (ms) — kept in sync with the @keyframes durations in etf.css
+const ROCKET_APPEAR_MS  = 500;   // pop in at center, no fire yet (must match pdfRocketAppear)
+const ROCKET_IGNITE_MS  = 3000;  // stationary, flame on — the deliberate launch-pad pause
+const ROCKET_LAUNCH_MS  = 600;   // one fast burst to the arrival point (must match pdfRocketLaunch)
+const ROCKET_VANISH_MS  = 300;   // fade out in place (must match pdfRocketVanish)
+const ROCKET_TOTAL_MS   = ROCKET_APPEAR_MS + ROCKET_IGNITE_MS + ROCKET_LAUNCH_MS + ROCKET_VANISH_MS + 1400; // + firework tail
+
+// Multi-color palette so each burst looks like the reference photo (several
+// colors mixed in one firework), not a single flat color.
+const FIREWORK_COLORS = ['#FFD700', '#5FD3FF', '#FF6EC7', '#7CFF6B', '#B388FF', '#FF8A3D'];
+
+function spawnFirework(xFrac, yFrac) {
+  const layer = document.getElementById('pdfFireworkLayer');
+  if (!layer) return;
+  const x = window.innerWidth * xFrac;
+  const y = window.innerHeight * yFrac;
+
+  const burst = document.createElement('div');
+  burst.className = 'pdf-firework';
+  burst.style.left = x + 'px';
+  burst.style.top = y + 'px';
+
+  const flashColor = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+  const flash = document.createElement('span');
+  flash.className = 'pdf-firework-flash';
+  flash.style.setProperty('--fw-color', flashColor);
+  burst.appendChild(flash);
+
+  const count = 26;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    const radius = 90 + Math.random() * 70;
+    const p = document.createElement('span');
+    p.className = 'pdf-firework-particle';
+    p.style.setProperty('--fw-x', (Math.cos(angle) * radius).toFixed(1) + 'px');
+    p.style.setProperty('--fw-y', (Math.sin(angle) * radius).toFixed(1) + 'px');
+    p.style.setProperty('--fw-color', FIREWORK_COLORS[i % FIREWORK_COLORS.length]);
+    burst.appendChild(p);
+  }
+  layer.appendChild(burst);
+  setTimeout(() => burst.remove(), 1200);
+}
+
+// Fires 3 overlapping, multi-color bursts near the download-icon corner —
+// matching the "several fireworks lighting the sky together" reference photo.
+function spawnFireworkShow() {
+  spawnFirework(0.96, 0.09);
+  setTimeout(() => spawnFirework(0.90, 0.14), 120);
+  setTimeout(() => spawnFirework(0.94, 0.20), 240);
+}
+
+async function generateAndDownloadPdf(rm) {
+  const overlay = document.getElementById('pdfStatusOverlay');
+  const rig = document.getElementById('pdfRocketRig');
+  const fwLayer = document.getElementById('pdfFireworkLayer');
+  const statusText = document.getElementById('pdfStatusText');
+
+  overlay.style.display = 'block';
+  fwLayer.innerHTML = '';
+  statusText.textContent = 'Generating your report…';
+
+  // Phase 1 — appear at center (where "Good to go" was), no fire yet
+  rig.classList.remove('rocket-appear', 'rocket-ignite', 'rocket-launch', 'rocket-vanish');
+  void rig.offsetWidth; // force reflow so repeat downloads always restart the animation
+  rig.classList.add('rocket-appear');
+
+  // Phase 2 — ignite and hold, stationary, for a real launch-pad pause
+  setTimeout(() => {
+    rig.classList.remove('rocket-appear');
+    rig.classList.add('rocket-ignite');
+  }, ROCKET_APPEAR_MS);
+
+  // Phase 3 — one fast, decisive launch to the arrival point
+  const launchAt = ROCKET_APPEAR_MS + ROCKET_IGNITE_MS;
+  setTimeout(() => {
+    rig.classList.remove('rocket-ignite');
+    rig.classList.add('rocket-launch');
+  }, launchAt);
+
+  // Phase 4 — vanish at the arrival point ...
+  const vanishAt = launchAt + ROCKET_LAUNCH_MS;
+  setTimeout(() => {
+    rig.classList.remove('rocket-launch');
+    rig.classList.add('rocket-vanish');
+  }, vanishAt);
+
+  // ... and only AFTER it has fully vanished, the firecracker show goes off
+  setTimeout(() => spawnFireworkShow(), vanishAt + ROCKET_VANISH_MS);
+
+  try {
+    const ctx = {
+      symbol,
+      etfObj,
+      meta: detailDb[symbol] || {},
+      analytics: (analyticsData && analyticsData.etfs) ? analyticsData.etfs[symbol] : null,
+      ndxReturns: (analyticsData && analyticsData.nasdaq100_trailing_returns) || {},
+      mainData,       // dashboard.json (as_of_date, spy_returns) — for the report
+      historyData,    // normalized daily NAVs — for the report's charts (pages 3+)
+      // Which benchmarks the user has selected on the live price chart; if none,
+      // the PDF chart defaults to S&P 500.
+      compareSelection: (compareBenchmarks.size ? Array.from(compareBenchmarks) : ['SPY'])
+        .map(k => ({ key: k, seriesKey: BENCHMARK_SERIES_KEY[k], label: BENCHMARK_LABEL[k] })),
+      rm,
+    };
+    // Let the full sequence play out alongside the (fast) PDF build, so the
+    // motion always reads as a real launch, not an instant jump-cut.
+    await Promise.all([
+      generateEtfPdf(ctx),
+      new Promise(resolve => setTimeout(resolve, ROCKET_TOTAL_MS)),
+    ]);
+    statusText.textContent = '✅ Download complete!';
+  } catch (err) {
+    console.error('PDF generation failed:', err);
+    statusText.textContent = '⚠ Something went wrong generating the PDF.';
+  }
+
+  setTimeout(() => { overlay.style.display = 'none'; }, 700);
+}
 
 // ── HELPERS ───────────────────────────────────────────────
 

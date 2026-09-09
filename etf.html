@@ -9,8 +9,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css?v=1.3" />
-  <link rel="stylesheet" href="etf.css?v=1.0" />
+  <link rel="stylesheet" href="etf.css?v=1.4" />
+  <link rel="stylesheet" href="etf-report.css?v=10" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="auth.js"></script>
 </head>
 <body>
@@ -66,6 +69,12 @@
         <h1 class="etf-fullname" id="etfFullName">—</h1>
         <p class="etf-description" id="etfDescription"></p>
       </div>
+      <button class="etf-download-btn" id="etfDownloadBtn" onclick="openPdfLeadModal()" title="Download full ETF research profile (PDF)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        <span>PDF</span>
+      </button>
     </div>
     <!-- Key Metrics Strip -->
     <div class="etf-metrics-strip" id="etfKeyMetrics"></div>
@@ -189,8 +198,7 @@
         </div>
       </div>
 
-      <!-- Row 2: Market Cap (horizontal bar chart) + Developed/Emerging split
-           and concentration stats -->
+      <!-- Row 2: Market Cap (horizontal bar chart) -->
       <div class="etf-comp-card etf-comp-card-wide" id="mcapCard">
         <div class="etf-mcap-layout">
           <div class="etf-mcap-main">
@@ -198,12 +206,6 @@
             <div class="etf-mcap-chart-wrap">
               <canvas id="mcapBarChartCanvas"></canvas>
             </div>
-          </div>
-          <div class="etf-mcap-side" id="mcapSide">
-            <h3 class="etf-comp-title">Developed / Emerging</h3>
-            <div class="stacked-bar-track" id="devEmStackedBar"></div>
-            <div class="stacked-bar-legend" id="devEmLegend"></div>
-            <div class="mcap-side-stats" id="mcapSideStats"></div>
           </div>
         </div>
       </div>
@@ -215,7 +217,7 @@
     <div class="etf-section-header">
       <div class="etf-section-title">
         <span class="etf-section-icon">🏦</span>
-        <h2>Top 10 Holdings</h2>
+        <h2>Top Holdings</h2>
       </div>
       <p class="etf-section-desc" id="top10Concentration"></p>
     </div>
@@ -263,6 +265,7 @@
       </table>
     </div>
     <p class="etf-chart-footer" id="monthlyReturnsFooter" style="text-align:left;"></p>
+    <div class="etf-bw-block" id="seasonalityBestWorst"></div>
   </section>
 
   <!-- ══ SECTION 8: Momentum Analysis ══ -->
@@ -408,6 +411,76 @@
 
 </main>
 
-<script src="etf.js"></script>
+<!-- ═══════════ PDF DOWNLOAD: lead-capture modal ═══════════ -->
+<div class="pdf-modal-overlay" id="pdfLeadModal" style="display:none;" onclick="handlePdfModalOverlayClick(event)">
+  <div class="pdf-modal-card">
+    <button class="pdf-modal-close" onclick="closePdfLeadModal()" title="Close (Esc)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <div class="pdf-modal-header">
+      <span class="pdf-modal-icon">📄</span>
+      <h3>Download ETF Profile</h3>
+      <p>Enter your details so we can personalize this report</p>
+    </div>
+    <div class="pdf-modal-body">
+      <div class="pdf-input-group">
+        <label>RM Name</label>
+        <input type="text" id="pdfRmName" placeholder="e.g. Ashvin Patidar" />
+      </div>
+      <div class="pdf-input-group">
+        <label>Mobile Number</label>
+        <div class="pdf-phone-wrap">
+          <span class="pdf-phone-cc">+91</span>
+          <input type="tel" id="pdfRmMobile" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric" />
+        </div>
+      </div>
+      <div class="pdf-input-group">
+        <label>Email ID</label>
+        <input type="email" id="pdfRmEmail" placeholder="abc@armstrong-cap.com" />
+      </div>
+      <div class="pdf-modal-error" id="pdfModalError" style="display:none;"></div>
+      <button class="pdf-goodtogo-btn" id="pdfGoodToGoBtn" onclick="handleGoodToGo()">Good to go</button>
+    </div>
+  </div>
+</div>
+
+<!-- PDF generation overlay: rocket launch sequence + status text -->
+<div class="pdf-status-overlay" id="pdfStatusOverlay" style="display:none;">
+  <div class="pdf-firework-layer" id="pdfFireworkLayer"></div>
+  <div class="pdf-rocket-rig" id="pdfRocketRig">
+    <div class="pdf-rocket-flame"></div>
+    <!-- Rocket shape modeled on the reference photo: tall narrow body, pointed
+         nose cone, orange band, twin side boosters — no flame baked in here,
+         ignition is a separate phase (the flame element above, toggled by class). -->
+    <svg class="pdf-rocket-svg" viewBox="0 0 60 140" width="26" height="60">
+      <path d="M30 4 C38 16, 41 30, 41 44 L41 100 L19 100 L19 44 C19 30, 22 16, 30 4 Z"
+            fill="#F2F4F7" stroke="#A7AEB9" stroke-width="1.3"/>
+      <rect x="19" y="70" width="22" height="10" fill="#E2622C"/>
+      <line x1="19" y1="44" x2="41" y2="44" stroke="#B9C0CA" stroke-width="1"/>
+      <path d="M12 58 C12 52, 15 48, 18 48 L18 106 L10 106 L10 58 Z"
+            fill="#D7DCE3" stroke="#A7AEB9" stroke-width="1.1"/>
+      <path d="M48 58 C48 52, 45 48, 42 48 L42 106 L50 106 L50 58 Z"
+            fill="#D7DCE3" stroke="#A7AEB9" stroke-width="1.1"/>
+      <rect x="17" y="98" width="26" height="8" rx="1.5" fill="#8B93A1"/>
+      <rect x="8" y="104" width="12" height="6" rx="1.5" fill="#6E7684"/>
+      <rect x="40" y="104" width="12" height="6" rx="1.5" fill="#6E7684"/>
+    </svg>
+  </div>
+  <div class="pdf-status-card" id="pdfStatusCard">
+    <div class="pdf-status-spinner"></div>
+    <span id="pdfStatusText">Generating your report…</span>
+  </div>
+</div>
+
+<!-- Off-screen render root — the report's A4 page divs are built here, captured
+     to canvas one page at a time, then assembled into the PDF. Kept in the DOM
+     (not display:none, which would break html2canvas measurement) but parked
+     far off-screen. -->
+<div id="pdfReportRoot" aria-hidden="true"></div>
+
+<script src="etf-pdf-report.js?v=9"></script>
+<script src="etf.js?v=10"></script>
 </body>
 </html>

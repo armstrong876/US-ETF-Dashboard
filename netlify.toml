@@ -37,6 +37,14 @@
   status = 200
   force = true
 
+# Per-ETF composition files (details/{SYMBOL}.json) — proxied from Supabase so
+# the one-pager reads the same 80 files live, no deploy needed on data refresh.
+[[redirects]]
+  from = "/details/*"
+  to = "https://gjpjhslkxdkxffeipumh.supabase.co/storage/v1/object/public/site-data/details/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/"
   to = "/login.html"
