@@ -12,9 +12,10 @@ that data_engine.py produces — the single source of truth for all NAV/return
 math (history.json is only a fallback). No new price fetching. The only
 external call here is the US 3-Month T-Bill yield (^IRX) for the risk-free rate.
 
-Scope: SYMBOLS below (QQQ, SMH for now). Add tickers to extend — nothing else
-to change. Does NOT read or write dashboard.json / history.json / any file the
-main dashboard or screener consumes.
+Scope: ALL 80 whitelist ETFs (loaded from etf_list.json). Seasonality and
+calendar-year returns use each ETF's own NAV; Risk Analysis benchmarks against a
+specific proxy (QQQ->^NDX, SMH->SOXX) or the S&P 500 by default. Does NOT read or
+write dashboard.json / history.json / any file the main dashboard consumes.
 
 Output: etf_analytics.json (consumed only by etf.js)
 Run:    python etf_analytics_engine.py
@@ -35,9 +36,28 @@ NAV_PARQUET = os.path.join(BASE_DIR, "nav_core_adj.parquet")
 HISTORY  = os.path.join(BASE_DIR, "history.json")
 OUTPUT   = os.path.join(BASE_DIR, "etf_analytics.json")
 
-# ── Scope: extend this list (+ BENCH_MAP entry) to bring more ETFs onto this page ──
-SYMBOLS = ["QQQ", "SMH"]
+# ── Scope: ALL 80 whitelist ETFs (loaded from etf_list.json). Seasonality &
+#    calendar-year returns need only each ETF's own NAV; Risk Analysis compares
+#    against a benchmark — a specific proxy where defined below, else the S&P 500
+#    as the default "US market" for beta / alpha / capture. ──
+ETF_LIST = os.path.join(BASE_DIR, "etf_list.json")
 
+
+def load_symbols():
+    try:
+        with open(ETF_LIST, encoding="utf-8") as f:
+            data = json.load(f)
+        items = data.values() if isinstance(data, dict) else data
+        syms = [(x.get("symbol") if isinstance(x, dict) else x) for x in items]
+        return [s for s in syms if s]
+    except Exception as e:
+        print(f"  Could not load etf_list.json ({e}); falling back to QQQ/SMH.")
+        return ["QQQ", "SMH"]
+
+
+SYMBOLS = load_symbols()
+
+DEFAULT_BENCH = "SPY"        # S&P 500 = default "US market" benchmark for Risk Analysis
 BENCH_MAP = {
     "QQQ": "^NDX",   # QQQ tracks the Nasdaq-100 exactly
     "SMH": "SOXX",   # semiconductor sector ETF -> iShares Semiconductor ETF as matched sector proxy
@@ -45,6 +65,7 @@ BENCH_MAP = {
 BENCH_LABEL = {
     "^NDX": "Nasdaq-100 Index",
     "SOXX": "iShares Semiconductor ETF (sector proxy)",
+    "SPY":  "S&P 500 (US market)",
 }
 
 PERIODS = {            # identical trading-day lookback table used by data_engine.py
@@ -278,7 +299,9 @@ def main():
         etf_series = df[sym]
         calendar, totals = monthly_returns_calendar(etf_series)
 
-        bench_sym = BENCH_MAP.get(sym)
+        bench_sym = BENCH_MAP.get(sym, DEFAULT_BENCH)
+        if bench_sym == sym:          # never benchmark an ETF against itself (e.g. SPY)
+            bench_sym = None
         risk = None
         if bench_sym and bench_sym in df.columns:
             if bench_sym not in bench_monthly_cache:

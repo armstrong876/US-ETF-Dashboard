@@ -69,13 +69,26 @@ with open(ETF_LIST) as f:
 # Load cached YF Profiles
 YF_PROFILES = {}
 YF_FILE = os.path.join(BASE_DIR, "yf_profiles.json")
+# etfdb-derived fundamentals published by the monthly etf_details_engine run.
+# Holdings count and Top-10 % live here because yfinance returns null for both
+# on most ETFs — without this they fall back to a static April snapshot.
+DERIVED_FILE = os.path.join(BASE_DIR, "etf_derived.json")
 # Pull the latest profiles cache from Supabase before reading (no-op without creds)
 try:
     import supabase_store as _sb
     if _sb.enabled():
         _sb.download_file("nav/yf_profiles.json", YF_FILE)
+        _sb.download_file("nav/etf_derived.json", DERIVED_FILE)
 except Exception:
     pass
+try:
+    with open(DERIVED_FILE, encoding="utf-8") as _f:
+        ETF_DERIVED = json.load(_f) or {}
+    print(f"  etf_derived.json loaded ({len(ETF_DERIVED)} symbols).")
+except Exception as _e:
+    ETF_DERIVED = {}
+    print(f"  etf_derived.json unavailable ({_e}) — Holdings / Top-10 % keep their etf_list.json values.")
+
 if os.path.exists(YF_FILE):
     try:
         with open(YF_FILE) as f:
@@ -391,11 +404,14 @@ for ticker in etf_meta:
 
     meta = tickers_meta.get(ticker_sym, {})
     yf_p = YF_PROFILES.get(ticker_sym, {})
+    _der = ETF_DERIVED.get(ticker_sym, {})
     
     # Merge strategy: Priority YF -> Fallback Excel
     row  = {
         "symbol":      ticker_sym,
-        "name":        yf_p.get("name") or meta.get("name", ticker_sym),
+        # Curated name first — etf_list.json holds the full legal name, while a
+        # vendor display name can arrive truncated.
+        "name":        meta.get("name") or yf_p.get("name") or ticker_sym,
         "asset_class": meta.get("asset_class", ""),
         "category":    yf_p.get("category") or meta.get("category", ""),
         "aum":         yf_p.get("aum") or meta.get("aum", 0),
@@ -407,8 +423,11 @@ for ticker in etf_meta:
         "pe":          yf_p.get("pe") or meta.get("pe"),
         "beta":        yf_p.get("beta") or meta.get("beta"),
         "alpha":       yf_p.get("alpha") or meta.get("alpha"), # Excel might have it or default null
-        "holdings":    yf_p.get("holdings") or meta.get("holdings"),
-        "top10_pct":   yf_p.get("top10_pct") or meta.get("top10_pct"),
+        # etfdb (monthly, live) -> yfinance -> etf_list.json. yfinance returns
+        # null for both of these on most ETFs, so without the etfdb figures
+        # these columns never moved off their April values.
+        "holdings":    _der.get("holdings") or yf_p.get("holdings") or meta.get("holdings"),
+        "top10_pct":   _der.get("top10_pct") or yf_p.get("top10_pct") or meta.get("top10_pct"),
         "yield":       yf_p.get("yield"),
         
         "returns":     {},
