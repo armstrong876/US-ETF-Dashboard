@@ -22,3 +22,14 @@ US ETF Portfolio Dashboard/
 # Retired pickle caches — replaced by version-robust Parquet (nav_*.parquet).
 # Ignored so the corrupt/stale local copies never get re-committed.
 *.pkl.gz
+
+# ── Supabase-backed data — NOT duplicated in the repo ────────────────────────
+# The monthly composition history lives in the private bucket at
+# "ETF Data/composition/{SYMBOL}.parquet". The local folder is only a scratch
+# working copy that each run pulls down and pushes back, so it must never be
+# committed — the bucket is the single source of truth.
+composition/
+
+# Per-ETF composition JSON the site reads. Served live from Supabase via the
+# netlify.toml /details/* proxy, so committed copies would only go stale.
+details/

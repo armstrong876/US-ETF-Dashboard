@@ -1,0 +1,75 @@
+name: Monthly ETF Refresh — Details + Key Fundamentals
+
+# MONTHLY (12th): two refreshes, both from GitHub's servers, both published to
+# Supabase — no git commit, no Netlify deploy.
+#   1. Composition of all 80 whitelist ETFs — top-15 holdings, sector / country /
+#      market-cap breakdown — scraped from etfdb.com -> site-data/details/{SYMBOL}.json.
+#   2. Key Fundamentals (AUM, expense ratio, P/E, yield, inception) from yfinance
+#      -> yf_profiles.json (private bucket); data_engine.py merges it into
+#      dashboard.json on the daily run, feeding the "Key Fundamentals" section.
+#
+# WHERE THE DATA LANDS (single source of truth = Supabase, never the repo):
+#   ETF Data/composition/{SYMBOL}.parquet   permanent month-by-month history,
+#                                           one row per holding/sector/country/
+#                                           region/mcap/fundamental, each tagged
+#                                           with its source. Read by the
+#                                           Portfolio Builder.
+#   site-data/details/{SYMBOL}.json         latest month only; what the browser
+#                                           fetches for the ETF one-pager.
+#
+# SOURCE MAP (fixed — never mixed):
+#   composition (holdings/sector/country/region/mcap) -> etfdb
+#   fundamentals (aum/pe/expense_ratio/yield/inception) -> yfinance
+#   beta + risk ratios -> CALCULATED FROM NAVs by etf_analytics_engine.py
+#
+# Runs on the 12th of each month (Ashwin's 11-15 window), FROM GITHUB'S SERVERS
+# so his own network is never the one hitting etfdb -> no block risk. The engine
+# fetches gently (4s gap between ETFs, retry + real UA), stamps each snapshot with
+# the END OF THE PREVIOUS COMPLETED MONTH, and uploads per-ETF files to Supabase.
+# There is NO git commit and NO Netlify deploy — the live site reads the fresh
+# files through the netlify.toml /details/* proxy.
+
+on:
+  schedule:
+    - cron: '30 2 12 * *'   # 12th of every month, 08:00 AM IST (2:30 AM UTC)
+  workflow_dispatch:          # Allows a manual run any time from the GitHub UI
+
+# Supabase credentials (encrypted repo secrets) — available to every step.
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+  SUPABASE_SITE_BUCKET: ${{ secrets.SUPABASE_SITE_BUCKET }}
+
+jobs:
+  etf-details:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # pandas + pyarrow are REQUIRED: the composition history is Parquet.
+          pip install requests beautifulsoup4 yfinance pandas pyarrow
+
+      # ORDER IS DELIBERATE — fundamentals FIRST.
+      # etf_details_engine.py reads yf_profiles.json and writes those values into
+      # each ETF's Parquet row for THIS month. If the engine ran first it would
+      # stamp last month's fundamentals with this month's as_of date.
+      - name: 1/2  Refresh Key Fundamentals (yfinance) -> yf_profiles.json -> Supabase
+        run: python update_fundamentals.py
+
+      - name: 2/2  Fetch all 80 ETF compositions (etfdb) -> Parquet + JSON -> Supabase
+        env:
+          PUSH: '1'            # upload the per-ETF Parquet history AND the site JSON
+        run: python etf_details_engine.py --all
+
+      - name: Done
+        run: echo "ETF details + key fundamentals published to Supabase. No git commit / no Netlify deploy."
