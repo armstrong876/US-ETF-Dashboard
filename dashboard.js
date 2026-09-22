@@ -13,6 +13,10 @@ let sortDir     = -1;   // -1 = descending, +1 = ascending
 let activeTab   = 'overview';
 let datasetMode = '100';
 
+// Symbols that have a full one-pager. Filled from dashboard.json on load, so it
+// tracks the whitelist itself instead of a hardcoded list that goes stale.
+const DETAIL_SYMBOLS = new Set();
+
 const PERIODS_HEATMAP = ['1W','15D','1M','2M','3M','6M','9M','12M','2Y','3Y','5Y','7Y','10Y'];
 const PERIODS_REL     = ['1W','1M','3M','6M','12M','2Y','3Y','5Y'];
 
@@ -45,6 +49,9 @@ async function fetchAndRender() {
     const res = await fetch(file + '?nocache=' + Date.now());
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     DATA = await res.json();
+    if (datasetMode === '100' && DATA && Array.isArray(DATA.etfs)) {
+      DATA.etfs.forEach(e => e.symbol && DETAIL_SYMBOLS.add(e.symbol));
+    }
     processData();
     showLoading(false);
 
@@ -643,11 +650,11 @@ function fmtAUM(v) {
 }
 
 function getTickerHtml(symbol) {
-  const allowed = ['QQQ', 'SMH', 'AIQ'];
-  if (allowed.includes(symbol)) {
+  // All 80 whitelist ETFs have a full one-pager; the wider 4,000+ universe does not.
+  if (DETAIL_SYMBOLS.has(symbol)) {
     return `<a href="etf.html?symbol=${symbol}" class="ticker-link active-link" title="Click to view full ETF Profile of ${symbol}">${symbol}</a>`;
   }
-  return `<span class="ticker-link disabled-link" onclick="showToast('Detailed analysis pages are currently being built. QQQ, SMH, and AIQ are available as sample previews.', 'info')" title="Preview available only for QQQ, SMH, AIQ">${symbol}</span>`;
+  return `<span class="ticker-link disabled-link" onclick="showToast('Full one-pager profiles are available for the 80 whitelist ETFs. This ticker is part of the wider universe.', 'info')" title="Full profile available for the 80 whitelist ETFs">${symbol}</span>`;
 }
 
 function fmtPct(v) {
