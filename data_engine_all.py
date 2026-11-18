@@ -31,6 +31,16 @@ PERIODS = {
 
 MOMENTUM_WEIGHTS = {"1M": 0.20, "3M": 0.30, "6M": 0.30, "12M": 0.20}
 
+# Corporate-action repair (see data_engine.py): a one-day move outside these
+# bounds (-30% / +30%) marks a suspected split / reverse split / bad stitch.
+# The whole cache is scanned; leveraged single-stock ETFs with genuine huge
+# moves get re-downloaded each run too (~230 tickers, about one extra batch).
+JUMP_DOWN      = 0.70
+JUMP_UP        = 1.30
+NO_JUMP_CHECK  = {"^VIX"}
+ACTION_FIELDS  = ("Stock Splits", "Dividends", "Capital Gains")
+action_tickers = set()    # filled by download_in_batches when actions=True
+
 MARKET_INDICES = {
     "^GSPC": "S&P 500 Index",
     "^NDX": "Nasdaq-100 Index",
@@ -92,11 +102,17 @@ def download_in_batches(tickers_to_download, download_kwargs):
             if isinstance(raw.columns, pd.MultiIndex):
                 cr = raw["Close"]
                 ca = raw.get("Adj Close", raw["Close"])
+                for field in ACTION_FIELDS:
+                    if field in raw.columns.get_level_values(0):
+                        f = raw[field].fillna(0)
+                        action_tickers.update(f.columns[(f != 0).any()])
             else:
                 cr = raw[["Close"]]
                 cr.columns = batch
                 ca = raw.get("Adj Close", cr)
-            
+                if any(field in raw.columns and (raw[field].fillna(0) != 0).any() for field in ACTION_FIELDS):
+                    action_tickers.update(batch)
+
             all_raw_list.append(cr)
             all_adj_list.append(ca)
         except Exception as e:
@@ -116,6 +132,14 @@ def download_in_batches(tickers_to_download, download_kwargs):
         df_adj.index = pd.to_datetime(df_adj.index)
         
     return df_raw, df_adj
+
+def tickers_with_jumps(df, last_n=None):
+    """Tickers whose close moves outside JUMP_DOWN/JUMP_UP in a single day."""
+    d = df if last_n is None else df.iloc[-(last_n + 1):]
+    d = d.ffill()
+    ratio = d / d.shift(1)
+    bad = ((ratio < JUMP_DOWN) | (ratio > JUMP_UP)).any()
+    return sorted(t for t in bad[bad].index if t not in NO_JUMP_CHECK)
 
 # ── Load or Create Cache ──────────────────────────────────────────────────────
 close_raw = pd.DataFrame()
@@ -197,7 +221,7 @@ if cache_loaded:
     batch2 = [t for t in core_etf_symbols if t not in batch1]              # Priority 2
     batch3 = [t for t in tickers if t not in batch1 and t not in batch2]   # Priority 3
 
-    inc_kwargs = {"start": start_date, "end": YESTERDAY, "interval": "1d", "auto_adjust": False}
+    inc_kwargs = {"start": start_date, "end": YESTERDAY, "interval": "1d", "auto_adjust": False, "actions": True}
 
     print(f"[{datetime.now():%H:%M:%S}]   Priority 1 — Indices ({len(batch1)} symbols)...")
     r1, a1 = download_in_batches(batch1, inc_kwargs)
@@ -215,6 +239,38 @@ if cache_loaded:
     close_adj = pd.concat([close_adj, new_adj])
     close_raw = close_raw.loc[~close_raw.index.duplicated(keep='last')].sort_index()
     close_adj = close_adj.loc[~close_adj.index.duplicated(keep='last')].sort_index()
+
+    # ── Corporate-action repair: re-download full history where Yahoo restated it ──
+    # Triggers: a split/distribution in this run's window, or a suspicious one-day
+    # jump anywhere in the cache (catches splits Yahoo dated outside the window).
+    acted  = action_tickers & set(close_raw.columns)
+    jumped = set(tickers_with_jumps(close_raw))
+    repair = sorted(acted | jumped)
+    if repair:
+        print(f"[{datetime.now():%H:%M:%S}] Corporate-action repair for {len(repair)} tickers "
+              f"(split/distribution: {len(acted)}, suspicious jump: {len(jumped)})")
+        full_start = (pd.Timestamp.today() - pd.DateOffset(years=11)).strftime("%Y-%m-%d")
+        fr, fa = download_in_batches(
+            repair,
+            {"start": full_start, "end": YESTERDAY, "interval": "1d", "auto_adjust": False}
+        )
+        got = [t for t in repair if t in fr.columns and t in fa.columns and fr[t].notna().any()]
+        # Yahoo's history now starting much later than ours = ticker reused by a
+        # new/restructured fund; the old fund's prices are dropped, not stitched.
+        restarted = [t for t in got if t in close_raw.columns and close_raw[t].first_valid_index() is not None
+                     and fr[t].first_valid_index() > max(close_raw[t].first_valid_index(), pd.Timestamp(full_start))
+                                                     + pd.Timedelta(days=30)]
+        if restarted:
+            print(f"[{datetime.now():%H:%M:%S}]   Yahoo restarted history for {len(restarted)} tickers (new/restructured fund?): {restarted[:40]}")
+        if got:
+            close_raw = pd.concat([close_raw.drop(columns=got), fr[got]], axis=1).sort_index()
+            close_adj = pd.concat([close_adj.drop(columns=got), fa[got]], axis=1).sort_index()
+        failed = sorted(set(repair) - set(got))
+        if failed:
+            print(f"[{datetime.now():%H:%M:%S}]   Repair download failed for {len(failed)} tickers — kept cached data: {failed[:20]}")
+        genuine = [t for t in tickers_with_jumps(close_raw) if t in got]
+        if genuine:
+            print(f"[{datetime.now():%H:%M:%S}]   Still a big one-day move after repair (genuine per Yahoo): {genuine[:40]}")
 
 else:
     # Cold start: Full 11-year download — end=TODAY (exclusive) caps at yesterday

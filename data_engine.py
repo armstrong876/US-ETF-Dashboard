@@ -49,6 +49,13 @@ PERIODS = {            # label : trading-day lookback
 
 MOMENTUM_WEIGHTS = {"1M": 0.20, "3M": 0.30, "6M": 0.30, "12M": 0.20}
 
+# Corporate-action repair: a one-day close-to-close move outside these bounds
+# (-30% / +30%) is treated as a suspected split / reverse split / bad stitch,
+# and that ticker's full history is re-downloaded.
+JUMP_DOWN      = 0.70
+JUMP_UP        = 1.30
+NO_JUMP_CHECK  = {"^VIX"}    # genuinely moves this much
+
 MARKET_INDICES = {
     "^GSPC": "S&P 500 Index",
     "^NDX": "Nasdaq-100 Index",
@@ -186,6 +193,31 @@ if cache_loaded:
         except Exception as e:
             print(f"[{datetime.now():%H:%M:%S}] Error fetching missing tickers: {e}")
 
+# ── Corporate-action helpers ──────────────────────────────────────────────────
+# The cache only appends the last few days, but Yahoo restates an ETF's WHOLE
+# past series after a split (Close + Adj Close) or a distribution (Adj Close).
+# Stitching fresh rows onto old cached rows then creates a fake cliff — e.g.
+# SOXX's 3:1 split (Oct-2026) showed as a -69% one-day "crash" and -72% 1M.
+def tickers_with_actions(raw, batch_tickers, fields=("Stock Splits", "Dividends", "Capital Gains")):
+    """Tickers with a split or cash distribution inside a yf.download(actions=True) window."""
+    hit = set()
+    for field in fields:
+        if isinstance(raw.columns, pd.MultiIndex):
+            if field in raw.columns.get_level_values(0):
+                f = raw[field].fillna(0)
+                hit.update(f.columns[(f != 0).any()])
+        elif field in raw.columns and (raw[field].fillna(0) != 0).any():
+            hit.update(batch_tickers)
+    return hit
+
+def tickers_with_jumps(df, last_n=None):
+    """Tickers whose close moves outside JUMP_DOWN/JUMP_UP in a single day."""
+    d = df if last_n is None else df.iloc[-(last_n + 1):]
+    d = d.ffill()
+    ratio = d / d.shift(1)
+    bad = ((ratio < JUMP_DOWN) | (ratio > JUMP_UP)).any()
+    return sorted(t for t in bad[bad].index if t not in NO_JUMP_CHECK)
+
 # ── Download fresh data — Priority Batched ────────────────────────────────────
 # Priority order (ensures most important symbols always get freshest data):
 #   Batch 1 — Market Indices  (index cards on dashboard)
@@ -209,13 +241,14 @@ if cache_loaded:
     batch3 = [t for t in tickers if t not in batch1 and t not in batch2]
 
     def fetch_batch(batch_tickers, label, start, end):
+        """Returns (close, adj_close, tickers with a split/distribution in the window)."""
         if not batch_tickers:
-            return pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), set()
         try:
             raw = yf.download(batch_tickers, start=start, end=end, interval="1d",
-                              auto_adjust=False, progress=False, threads=True)
+                              auto_adjust=False, actions=True, progress=False, threads=True)
             if raw.empty:
-                return pd.DataFrame(), pd.DataFrame()
+                return pd.DataFrame(), pd.DataFrame(), set()
             if isinstance(raw.columns, pd.MultiIndex):
                 r = raw["Close"]
                 a = raw.get("Adj Close", raw["Close"])
@@ -223,14 +256,14 @@ if cache_loaded:
                 r = raw[["Close"]]; r.columns = batch_tickers
                 a = raw.get("Adj Close", r)
             print(f"[{datetime.now():%H:%M:%S}]   {label}: {len(batch_tickers)} tickers done.")
-            return r, a
+            return r, a, tickers_with_actions(raw, batch_tickers)
         except Exception as e:
             print(f"[{datetime.now():%H:%M:%S}]   {label}: error — {e}")
-            return pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), set()
 
-    r1, a1 = fetch_batch(batch1, "Batch 1 — Indices",   start_date, YESTERDAY)
-    r2, a2 = fetch_batch(batch2, "Batch 2 — Core ETFs", start_date, YESTERDAY)
-    r3, a3 = fetch_batch(batch3, "Batch 3 — Remaining", start_date, YESTERDAY)
+    r1, a1, act1 = fetch_batch(batch1, "Batch 1 — Indices",   start_date, YESTERDAY)
+    r2, a2, act2 = fetch_batch(batch2, "Batch 2 — Core ETFs", start_date, YESTERDAY)
+    r3, a3, act3 = fetch_batch(batch3, "Batch 3 — Remaining", start_date, YESTERDAY)
 
     new_raw = pd.concat([r1, r2, r3], axis=1)
     new_adj = pd.concat([a1, a2, a3], axis=1)
@@ -241,6 +274,35 @@ if cache_loaded:
     close_adj = pd.concat([close_adj, new_adj])
     close_raw = close_raw.loc[~close_raw.index.duplicated(keep='last')].sort_index()
     close_adj = close_adj.loc[~close_adj.index.duplicated(keep='last')].sort_index()
+
+    # ── Corporate-action repair: re-download full history where Yahoo restated it ──
+    # Triggers: a split/distribution in today's window, or a suspicious one-day
+    # jump anywhere in the cache (catches splits Yahoo dated outside the window).
+    acted  = (act1 | act2 | act3) & set(close_raw.columns)
+    jumped = set(tickers_with_jumps(close_raw))
+    repair = sorted(acted | jumped)
+    if repair:
+        print(f"[{datetime.now():%H:%M:%S}] Corporate-action repair for {len(repair)} tickers "
+              f"(split/distribution: {sorted(acted) or '-'}; suspicious jump: {sorted(jumped) or '-'})")
+        full_start = (date.today() - pd.DateOffset(years=11)).strftime("%Y-%m-%d")
+        fr, fa, _ = fetch_batch(repair, "Full-history repair", full_start, YESTERDAY)
+        got = [t for t in repair if t in fr.columns and t in fa.columns and fr[t].notna().any()]
+        # Yahoo's history now starting much later than ours = ticker reused by a
+        # new/restructured fund; the old fund's prices are dropped, not stitched.
+        restarted = [t for t in got if t in close_raw.columns and close_raw[t].first_valid_index() is not None
+                     and fr[t].first_valid_index() > max(close_raw[t].first_valid_index(), pd.Timestamp(full_start))
+                                                     + pd.Timedelta(days=30)]
+        if restarted:
+            print(f"[{datetime.now():%H:%M:%S}]   Yahoo restarted history (new/restructured fund?): {restarted}")
+        if got:
+            close_raw = pd.concat([close_raw.drop(columns=got), fr[got]], axis=1).sort_index()
+            close_adj = pd.concat([close_adj.drop(columns=got), fa[got]], axis=1).sort_index()
+        failed = sorted(set(repair) - set(got))
+        if failed:
+            print(f"[{datetime.now():%H:%M:%S}]   Repair download failed for {failed} — kept cached data.")
+        genuine = [t for t in tickers_with_jumps(close_raw) if t in got]
+        if genuine:
+            print(f"[{datetime.now():%H:%M:%S}]   Still a big one-day move after repair (genuine per Yahoo): {genuine}")
 
 else:
     # Cold start: Full 11-year download — end=TODAY (exclusive) caps at yesterday

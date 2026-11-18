@@ -9,11 +9,24 @@ from flask import Flask, send_from_directory, jsonify, request
 
 app = Flask(__name__, static_folder='.')
 
-# --- Configuration ---
-NETLIFY_TOKEN = os.environ.get("NETLIFY_AUTH_TOKEN", "nfp_8f2UiPxVQUbcTNbxGU8GqdbAVDLf2jnd6936")
-NETLIFY_SITE_ID = os.environ.get("NETLIFY_SITE_ID", "1efbdd84-2440-4715-aa74-52baf24c3b8f")
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# --- Configuration (real env vars win over the local .env file) ---
+def _load_env():
+    vals = {}
+    envf = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(envf):
+        with open(envf, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    vals[k.strip()] = v.strip()
+    return vals
+
+_ENV = _load_env()
+NETLIFY_TOKEN = os.environ.get("NETLIFY_AUTH_TOKEN") or _ENV.get("NETLIFY_AUTH_TOKEN", "")
+NETLIFY_SITE_ID = os.environ.get("NETLIFY_SITE_ID") or _ENV.get("NETLIFY_SITE_ID", "")
 DASHBOARD_JSON = os.path.join(BASE_DIR, "dashboard.json")
 
 def get_last_updated_date():
@@ -69,6 +82,16 @@ def deploy_to_netlify():
 @app.route('/')
 def index():
     return send_from_directory('.', 'index.html')
+
+DETAILS_URL = "https://gjpjhslkxdkxffeipumh.supabase.co/storage/v1/object/public/site-data/details"
+
+@app.route('/details/<path:name>')
+def serve_details(name):
+    # Mirror netlify.toml: per-ETF composition lives in the PUBLIC Supabase bucket (no token).
+    if os.path.exists(os.path.join(BASE_DIR, 'details', name)):
+        return send_from_directory('details', name)
+    r = requests.get(f"{DETAILS_URL}/{name}", timeout=30)
+    return app.response_class(r.content, status=r.status_code, mimetype='application/json')
 
 @app.route('/<path:path>')
 def serve_static(path):

@@ -1,6 +1,9 @@
 [build]
   publish = "."
-  command = ""
+  # Strip non-website files from the published copy (engine code, Parquet/pickle
+  # caches, notes, helper scripts, backups) so they can't be downloaded from the
+  # site. Only affects Netlify's build copy — the repo keeps every file.
+  command = "rm -rf *.py *.parquet *.gz *.md *.ps1 *.bat *.gs requirements.txt etf_list.json etf_list_all.json yf_profiles.json etf_derived.json __pycache__ composition backup_* 'US ETF Spreadsheet Dashboard'"
 
 # ── Data proxied from Supabase Storage (public "site-data" bucket) ──
 # The site still requests these files at the same paths; Netlify fetches them
