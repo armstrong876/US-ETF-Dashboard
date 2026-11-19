@@ -82,8 +82,7 @@ print(f"[{datetime.now():%H:%M:%S}] Fetching price data for {len(tickers)} ETFs 
 print("This may take 5-15 minutes for 4500+ ETFs. Please wait...\n")
 
 # ── Batch Download Helper Function ──────────────────────────────────────────
-def download_in_batches(tickers_to_download, download_kwargs):
-    batch_size = 250
+def download_in_batches(tickers_to_download, download_kwargs, batch_size=250, pause=1):
     all_raw_list = []
     all_adj_list = []
     
@@ -117,8 +116,8 @@ def download_in_batches(tickers_to_download, download_kwargs):
             all_adj_list.append(ca)
         except Exception as e:
             print(f"  Error on batch {i}: {e}")
-        time.sleep(1)
-    
+        time.sleep(pause)
+
     df_raw = pd.concat(all_raw_list, axis=1) if all_raw_list else pd.DataFrame()
     df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
     if not df_raw.empty:
@@ -131,6 +130,24 @@ def download_in_batches(tickers_to_download, download_kwargs):
         df_adj = df_adj.dropna(how="all")
         df_adj.index = pd.to_datetime(df_adj.index)
         
+    return df_raw, df_adj
+
+def download_with_retries(tickers_to_download, download_kwargs, label, rounds=2, wait=60, batch_size=250, pause=1):
+    """download_in_batches, then re-request tickers that came back empty (Yahoo
+    rate limits / transient yfinance 'database is locked'), backing off between
+    rounds. Genuinely delisted tickers simply stay empty."""
+    df_raw, df_adj = download_in_batches(tickers_to_download, download_kwargs, batch_size, pause)
+    for n in range(1, rounds + 1):
+        empty = [t for t in tickers_to_download if t not in df_raw.columns or df_raw[t].isna().all()]
+        if not empty:
+            break
+        print(f"[{datetime.now():%H:%M:%S}]   {label}: {len(empty)} tickers came back empty — retry {n}/{rounds} in {wait * n}s")
+        time.sleep(wait * n)
+        r2, a2 = download_in_batches(empty, download_kwargs, batch_size, pause)
+        keep = [t for t in empty if t in r2.columns and t in a2.columns and r2[t].notna().any()]
+        if keep:
+            df_raw = pd.concat([df_raw.drop(columns=[c for c in keep if c in df_raw.columns]), r2[keep]], axis=1)
+            df_adj = pd.concat([df_adj.drop(columns=[c for c in keep if c in df_adj.columns]), a2[keep]], axis=1)
     return df_raw, df_adj
 
 def tickers_with_jumps(df, last_n=None):
@@ -224,21 +241,21 @@ if cache_loaded:
     inc_kwargs = {"start": start_date, "end": YESTERDAY, "interval": "1d", "auto_adjust": False, "actions": True}
 
     print(f"[{datetime.now():%H:%M:%S}]   Priority 1 — Indices ({len(batch1)} symbols)...")
-    r1, a1 = download_in_batches(batch1, inc_kwargs)
+    r1, a1 = download_with_retries(batch1, inc_kwargs, "Indices", wait=20)
     print(f"[{datetime.now():%H:%M:%S}]   Priority 2 — Core ETFs ({len(batch2)} symbols)...")
-    r2, a2 = download_in_batches(batch2, inc_kwargs)
+    r2, a2 = download_with_retries(batch2, inc_kwargs, "Core ETFs", wait=20)
     print(f"[{datetime.now():%H:%M:%S}]   Priority 3 — Remaining ({len(batch3)} symbols)...")
-    r3, a3 = download_in_batches(batch3, inc_kwargs)
+    r3, a3 = download_with_retries(batch3, inc_kwargs, "Remaining")
 
     new_raw = pd.concat([r1, r2, r3], axis=1)
     new_adj = pd.concat([a1, a2, a3], axis=1)
     new_raw = new_raw.loc[:, ~new_raw.columns.duplicated(keep='last')]
     new_adj = new_adj.loc[:, ~new_adj.columns.duplicated(keep='last')]
 
-    close_raw = pd.concat([close_raw, new_raw])
-    close_adj = pd.concat([close_adj, new_adj])
-    close_raw = close_raw.loc[~close_raw.index.duplicated(keep='last')].sort_index()
-    close_adj = close_adj.loc[~close_adj.index.duplicated(keep='last')].sort_index()
+    # Fresh values win, but a ticker whose download failed (all-NaN in new_raw)
+    # keeps its cached prices for the overlap days instead of being blanked.
+    close_raw = new_raw.combine_first(close_raw).sort_index()
+    close_adj = new_adj.combine_first(close_adj).sort_index()
 
     # ── Corporate-action repair: re-download full history where Yahoo restated it ──
     # Triggers: a split/distribution in this run's window, or a suspicious one-day
@@ -250,9 +267,14 @@ if cache_loaded:
         print(f"[{datetime.now():%H:%M:%S}] Corporate-action repair for {len(repair)} tickers "
               f"(split/distribution: {len(acted)}, suspicious jump: {len(jumped)})")
         full_start = (pd.Timestamp.today() - pd.DateOffset(years=11)).strftime("%Y-%m-%d")
-        fr, fa = download_in_batches(
+        # Smaller, slower batches + 3 backed-off retry rounds: a burst of 11-year
+        # downloads right after the incremental pass gets Yahoo-rate-limited
+        # (first live run: 351 of 410 repairs refused with "Too Many Requests").
+        time.sleep(30)
+        fr, fa = download_with_retries(
             repair,
-            {"start": full_start, "end": YESTERDAY, "interval": "1d", "auto_adjust": False}
+            {"start": full_start, "end": YESTERDAY, "interval": "1d", "auto_adjust": False},
+            "Full-history repair", rounds=3, wait=60, batch_size=100, pause=5
         )
         got = [t for t in repair if t in fr.columns and t in fa.columns and fr[t].notna().any()]
         # Yahoo's history now starting much later than ours = ticker reused by a

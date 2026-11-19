@@ -261,19 +261,38 @@ if cache_loaded:
             print(f"[{datetime.now():%H:%M:%S}]   {label}: error — {e}")
             return pd.DataFrame(), pd.DataFrame(), set()
 
-    r1, a1, act1 = fetch_batch(batch1, "Batch 1 — Indices",   start_date, YESTERDAY)
-    r2, a2, act2 = fetch_batch(batch2, "Batch 2 — Core ETFs", start_date, YESTERDAY)
-    r3, a3, act3 = fetch_batch(batch3, "Batch 3 — Remaining", start_date, YESTERDAY)
+    def fetch_batch_retry(batch_tickers, label, start, end, rounds=2, wait=20):
+        """fetch_batch, then re-request tickers that came back empty (Yahoo rate
+        limit / transient yfinance 'database is locked'), backing off between rounds."""
+        r, a, acted = fetch_batch(batch_tickers, label, start, end)
+        for n in range(1, rounds + 1):
+            empty = [t for t in batch_tickers if t not in r.columns or r[t].isna().all()]
+            if not empty:
+                break
+            print(f"[{datetime.now():%H:%M:%S}]   {label}: {empty} came back empty — retry {n}/{rounds} in {wait * n}s")
+            time.sleep(wait * n)
+            r2, a2, acted2 = fetch_batch(empty, f"{label} (retry {n})", start, end)
+            keep = [t for t in empty if t in r2.columns and t in a2.columns and r2[t].notna().any()]
+            if keep:
+                r = pd.concat([r.drop(columns=[c for c in keep if c in r.columns]), r2[keep]], axis=1)
+                a = pd.concat([a.drop(columns=[c for c in keep if c in a.columns]), a2[keep]], axis=1)
+            acted |= acted2
+        return r, a, acted
+
+    r1, a1, act1 = fetch_batch_retry(batch1, "Batch 1 — Indices",   start_date, YESTERDAY)
+    r2, a2, act2 = fetch_batch_retry(batch2, "Batch 2 — Core ETFs", start_date, YESTERDAY)
+    r3, a3, act3 = fetch_batch_retry(batch3, "Batch 3 — Remaining", start_date, YESTERDAY)
 
     new_raw = pd.concat([r1, r2, r3], axis=1)
     new_adj = pd.concat([a1, a2, a3], axis=1)
     new_raw = new_raw.loc[:, ~new_raw.columns.duplicated(keep='last')]
     new_adj = new_adj.loc[:, ~new_adj.columns.duplicated(keep='last')]
 
-    close_raw = pd.concat([close_raw, new_raw])
-    close_adj = pd.concat([close_adj, new_adj])
-    close_raw = close_raw.loc[~close_raw.index.duplicated(keep='last')].sort_index()
-    close_adj = close_adj.loc[~close_adj.index.duplicated(keep='last')].sort_index()
+    # Fresh values win, but a ticker whose download failed (all-NaN in new_raw)
+    # keeps its cached prices for the overlap days instead of being blanked —
+    # a row-level replace here once rolled ^DJI back 4 days after one failed fetch.
+    close_raw = new_raw.combine_first(close_raw).sort_index()
+    close_adj = new_adj.combine_first(close_adj).sort_index()
 
     # ── Corporate-action repair: re-download full history where Yahoo restated it ──
     # Triggers: a split/distribution in today's window, or a suspicious one-day
@@ -285,7 +304,7 @@ if cache_loaded:
         print(f"[{datetime.now():%H:%M:%S}] Corporate-action repair for {len(repair)} tickers "
               f"(split/distribution: {sorted(acted) or '-'}; suspicious jump: {sorted(jumped) or '-'})")
         full_start = (date.today() - pd.DateOffset(years=11)).strftime("%Y-%m-%d")
-        fr, fa, _ = fetch_batch(repair, "Full-history repair", full_start, YESTERDAY)
+        fr, fa, _ = fetch_batch_retry(repair, "Full-history repair", full_start, YESTERDAY, rounds=3, wait=30)
         got = [t for t in repair if t in fr.columns and t in fa.columns and fr[t].notna().any()]
         # Yahoo's history now starting much later than ours = ticker reused by a
         # new/restructured fund; the old fund's prices are dropped, not stitched.
