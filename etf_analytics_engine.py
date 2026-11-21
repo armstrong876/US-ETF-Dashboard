@@ -2,12 +2,13 @@
 ETF Detail Page — Returns & Risk Analytics Engine
 ===================================================
 Computes, for the individual ETF profile page (etf.html) only:
-  1. Monthly Returns calendar (year x month, adjusted/total-return NAV)
+  1. Monthly Returns calendar (year x month, Yahoo closing price = price return)
   2. Real Nasdaq-100 trailing returns (replaces the hardcoded fallback in etf.js)
   3. Risk Analysis suite (Std Dev, Sharpe, Sortino, Beta, Alpha, Max Drawdown +
      Recovery, Upside/Downside Capture, Composite Score) vs a matched US benchmark
 
-Data source: the nav_core_adj.parquet cache (raw adjusted/total-return close)
+Data source: the nav_core_raw.parquet cache (Yahoo closing price — the same basis
+as every return on the site)
 that data_engine.py produces — the single source of truth for all NAV/return
 math (history.json is only a fallback). No new price fetching. The only
 external call here is the US 3-Month T-Bill yield (^IRX) for the risk-free rate.
@@ -32,7 +33,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # close), so every return, seasonality and risk figure on the ETF page is computed
 # from the same single source of truth. history.json is only a fallback (it is
 # itself derived from this Parquet, just normalized — ratio math is identical).
-NAV_PARQUET = os.path.join(BASE_DIR, "nav_core_adj.parquet")
+# Switched from nav_core_adj (dividend-adjusted) to nav_core_raw (Yahoo's closing
+# price) so the monthly table, risk figures and trailing returns on the ETF page
+# use the same price basis as every other return on the site.
+NAV_PARQUET = os.path.join(BASE_DIR, "nav_core_raw.parquet")
 HISTORY  = os.path.join(BASE_DIR, "history.json")
 OUTPUT   = os.path.join(BASE_DIR, "etf_analytics.json")
 
@@ -68,11 +72,16 @@ BENCH_LABEL = {
     "SPY":  "S&P 500 (US market)",
 }
 
-PERIODS = {            # identical trading-day lookback table used by data_engine.py
-    "1W":  5, "15D": 15, "1M":  21, "2M":  42, "3M":  63,
-    "6M":  126, "9M":  189, "12M": 252, "2Y":  504, "3Y":  756,
-    "5Y":  1260, "7Y":  1764, "10Y": 2520,
+PERIODS = {            # calendar lookback — identical rule to data_engine.py
+    "1W":  pd.DateOffset(weeks=1),   "15D": pd.DateOffset(days=15),
+    "1M":  pd.DateOffset(months=1),  "2M":  pd.DateOffset(months=2),
+    "3M":  pd.DateOffset(months=3),  "6M":  pd.DateOffset(months=6),
+    "9M":  pd.DateOffset(months=9),  "12M": pd.DateOffset(years=1),
+    "2Y":  pd.DateOffset(years=2),   "3Y":  pd.DateOffset(years=3),
+    "5Y":  pd.DateOffset(years=5),   "7Y":  pd.DateOffset(years=7),
+    "10Y": pd.DateOffset(years=10),
 }
+CAGR_YEARS = {"12M": 1, "2Y": 2, "3Y": 3, "5Y": 5, "7Y": 7, "10Y": 10}   # shown annualised
 
 MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
@@ -97,22 +106,24 @@ def load_history():
     return df
 
 
-def pct_return(series, n_days, index):
-    """Trailing % return: same lookback-window / CAGR-annualization logic as
-    data_engine.py's pct_return(), applied to history.json's adjusted series."""
+def pct_return(series, label):
+    """Trailing % return ending on the series' own last close — the same
+    calendar rule as data_engine.py's pct_return(): start = close on the same
+    date a week/month/year earlier, previous close if that was a holiday;
+    1Y and longer annualised (CAGR)."""
     s = series.dropna()
     if len(s) < 5:
         return None
-    nav_pos = len(index) - 1
-    target_pos = nav_pos - n_days
-    if target_pos < 0:
+    end_date = s.index[-1]
+    start_date = end_date - PERIODS[label]
+    if s.index[0] > start_date:
         return None
-    current = series.iloc[nav_pos]
-    past = series.iloc[target_pos]
-    if pd.isna(current) or pd.isna(past) or past == 0:
+    current, past = float(s.iloc[-1]), float(s.asof(start_date))
+    if past == 0:
         return None
-    if n_days >= 252:
-        return round(((current / past) ** (252.0 / n_days) - 1) * 100, 2)
+    years = CAGR_YEARS.get(label)
+    if years:
+        return round(((current / past) ** (1.0 / years) - 1) * 100, 2)
     return round((current / past - 1) * 100, 2)
 
 
@@ -278,7 +289,7 @@ def main():
 
     ndx_series = df["^NDX"] if "^NDX" in df.columns else None
     nasdaq100_trailing_returns = (
-        {label: pct_return(ndx_series, n, idx) for label, n in PERIODS.items()}
+        {label: pct_return(ndx_series, label) for label in PERIODS}
         if ndx_series is not None else {}
     )
 

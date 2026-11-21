@@ -749,11 +749,26 @@ function renderPriceChart() {
   if (ft) {
     if (compareOn) {
       const names = BENCHMARK_ORDER.filter(k => compareBenchmarks.has(k)).map(k => BENCHMARK_LABEL[k]).join(', ');
-      ft.textContent = `Normalized total return (%) from 0.00% on ${timeline.labels[0]}, vs ${names}.`;
+      ft.textContent = `Price return (%) from 0.00% on ${timeline.labels[0]}, vs ${names}.`;
     } else {
-      ft.textContent = `Daily adjusted closing levels ($) from ${timeline.labels[0]} to ${timeline.labels[timeline.labels.length - 1]}.`;
+      ft.textContent = `Daily closing prices ($) from ${timeline.labels[0]} to ${timeline.labels[timeline.labels.length - 1]}.`;
     }
   }
+}
+
+// Same date helpers as dashboard.js (separate names: this page also loads the
+// PDF report script). shift: same day N months back, clamped to month end.
+function etfShiftMonthsISO(iso, months) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 - months, 1));
+  const lastDay = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(d, lastDay));
+  return t.toISOString().slice(0, 10);
+}
+function etfIdxOnOrBefore(dates, iso) {   // last index with dates[i] <= iso, else -1
+  let i = -1;
+  for (let k = 0; k < dates.length && dates[k] <= iso; k++) i = k;
+  return i;
 }
 
 // Slice price arrays and reconstruct RAW and PCT structures
@@ -769,49 +784,45 @@ function getPriceChartData() {
   const normLatest = etfNorm[etfNorm.length - 1];
   const scaleFactor = etfObj.price / normLatest;
 
-  // Get index boundary matching timeframe
+  // Get index boundary matching timeframe — same rule as every return on the
+  // site: start = close on the same date N months back, or the previous
+  // trading day's close if that date was a weekend/holiday.
   let startIndex = 0;
   const lastIndex = dates.length - 1;
-  const lastDate = new Date(dates[lastIndex]);
+  let endIndex = lastIndex;
 
   if (chartTimeframe === 'custom') {
     const fromStr = document.getElementById('etfFromDate').value;
     const toStr = document.getElementById('etfToDate').value;
-    
-    let fromIdx = dates.findIndex(d => d >= fromStr);
-    let toIdx = dates.findIndex(d => d >= toStr);
-
-    if (fromIdx === -1) fromIdx = 0;
-    if (toIdx === -1) toIdx = lastIndex;
-    startIndex = fromIdx;
+    if (fromStr) startIndex = Math.max(0, etfIdxOnOrBefore(dates, fromStr));
+    if (toStr) {
+      const toIdx = etfIdxOnOrBefore(dates, toStr);
+      if (toIdx > startIndex) endIndex = toIdx;
+    }
   } else {
-    let monthsToSubtract = 12;
-    if (chartTimeframe === '1M') monthsToSubtract = 1;
-    else if (chartTimeframe === '3M') monthsToSubtract = 3;
-    else if (chartTimeframe === '6M') monthsToSubtract = 6;
-    else if (chartTimeframe === '3Y') monthsToSubtract = 36;
-    else if (chartTimeframe === '5Y') monthsToSubtract = 60;
-    else if (chartTimeframe === 'All') monthsToSubtract = 999;
-
-    if (monthsToSubtract < 900) {
-      const targetDate = new Date(lastDate);
-      targetDate.setMonth(targetDate.getMonth() - monthsToSubtract);
-      const targetStr = targetDate.toISOString().split('T')[0];
-      startIndex = dates.findIndex(d => d >= targetStr);
-      if (startIndex === -1) startIndex = 0;
+    // End on the table's date (last US close), not on a later day when only
+    // Indian/UK markets traded, so the chart % equals the return figures.
+    const asOf = (mainData && mainData.as_of_date) || dates[lastIndex];
+    const asOfIdx = etfIdxOnOrBefore(dates, asOf);
+    if (asOfIdx !== -1) endIndex = asOfIdx;
+    if (chartTimeframe !== 'All') {
+      const months = { '1M': 1, '3M': 3, '6M': 6, '1Y': 12, '3Y': 36, '5Y': 60 }[chartTimeframe] || 12;
+      const targetStr = etfShiftMonthsISO(dates[endIndex], months);
+      startIndex = Math.max(0, etfIdxOnOrBefore(dates, targetStr));
     }
   }
 
   // Slice arrays
-  const slicedDates = dates.slice(startIndex);
-  const slicedEtfNorm = etfNorm.slice(startIndex);
+  const slicedDates = dates.slice(startIndex, endIndex + 1);
+  const slicedEtfNorm = etfNorm.slice(startIndex, endIndex + 1);
 
   // Build raw dollars arrays
-  const etfRaw = slicedEtfNorm.map(v => v * scaleFactor);
+  const etfRaw = slicedEtfNorm.map(v => v != null ? v * scaleFactor : null);
 
-  // Build normalized percentage returns starting at 0%
-  const etfStartVal = etfRaw[0];
-  const etfPct = etfRaw.map(v => ((v / etfStartVal) - 1) * 100);
+  // Build normalized percentage returns starting at 0% (first day with a price,
+  // so an ETF younger than the window still starts at 0%)
+  const etfStartVal = etfRaw.find(v => v != null && v > 0);
+  const etfPct = etfRaw.map(v => (v != null && etfStartVal ? ((v / etfStartVal) - 1) * 100 : null));
 
   // Normalized % return for each SELECTED benchmark index, keyed by button id
   const benchPct = {};
@@ -819,7 +830,7 @@ function getPriceChartData() {
     const seriesKey = BENCHMARK_SERIES_KEY[key];
     const raw = seriesKey ? historyData.series[seriesKey] : null;
     if (!raw) return;
-    const sliced = raw.slice(startIndex);
+    const sliced = raw.slice(startIndex, endIndex + 1);
     // find first non-null base so a benchmark with a later start still normalizes
     const base = sliced.find(v => v != null && v > 0);
     if (base == null) return;
@@ -1003,7 +1014,7 @@ function populateMonthlyReturns() {
     return;
   }
 
-  desc.textContent = `Calendar-year monthly returns of ${symbol}, computed from daily adjusted (total-return) NAV.`;
+  desc.textContent = `Calendar-year monthly returns of ${symbol}, computed from daily closing prices (price return).`;
 
   // Header row: Year | Jan..Dec | Total
   headRow.innerHTML = `<th class="hm-row-label">Year</th>` +
@@ -1141,7 +1152,7 @@ function renderSeasonalityBestWorst(years, totals, spyAnnual, asOf, etfAvg) {
   wrap.innerHTML = `
     <div class="etf-bw-head">
       <h3>Best &amp; Worst Calendar Years</h3>
-      <span>${symbol} annual total return vs S&amp;P 500</span>
+      <span>${symbol} annual price return vs S&amp;P 500</span>
     </div>
     <div class="etf-bw-grid">
       <div class="etf-bw-tablewrap">
@@ -1404,7 +1415,7 @@ function renderRiskCharts() {
     });
   }
 
-  // Drawdown chart — last 3Y of daily adjusted close from history.json
+  // Drawdown chart — last 3Y of daily closing prices from history.json
   const ddCanvas = document.getElementById('drawdownChartCanvas');
   if (ddCanvas && historyData && historyData.series && historyData.series[symbol]) {
     if (drawdownChart) drawdownChart.destroy();

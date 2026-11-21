@@ -203,7 +203,8 @@ function rpPageOverview(ctx) {
 
     <div class="rp-callout">
       <b>How to read this factsheet.</b> All figures are drawn from ${rpEsc(ctx.symbol)}'s live profile as of
-      ${rpDateLong(ctx.mainData.as_of_date)}. Multi-year returns are annualized (CAGR). Returns exclude platform
+      ${rpDateLong(ctx.mainData.as_of_date)}. Returns are price returns on Yahoo Finance closing prices, measured from the same
+      calendar date (previous close if it was a holiday). Multi-year returns are annualized (CAGR). Returns exclude platform
       fees and taxes. Please read the full risk analysis before investing.
     </div>
 
@@ -266,17 +267,28 @@ function rpLineChartSVG(indexed, seriesMeta) {
     ${grid}${lines}${xlabels}</svg>`;
 }
 
-// Build indexed-to-100 series over the last `days` trading days
-function rpIndexedSeries(ctx, tickers, days) {
+// Build indexed-to-100 series over the last `months` calendar months — start =
+// the close on the same date N months back (previous close if it was a holiday),
+// the same rule every return on the site uses.
+function rpIndexedSeries(ctx, tickers, months) {
   const h = ctx.historyData;
   if (!h || !h.series || !h.dates) return null;
-  const start = Math.max(0, h.dates.length - days);
-  const dates = h.dates.slice(start);
+  // End on the report's as-of date (last US close) — same end as the tables.
+  const asOf = (ctx.mainData && ctx.mainData.as_of_date) || h.dates[h.dates.length - 1];
+  let end = h.dates.length - 1;
+  for (let k = 0; k < h.dates.length && h.dates[k] <= asOf; k++) end = k;
+  const [y, m, d] = h.dates[end].split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 - months, 1));
+  t.setUTCDate(Math.min(d, new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate()));
+  const target = t.toISOString().slice(0, 10);
+  let start = 0;
+  for (let k = 0; k < h.dates.length && h.dates[k] <= target; k++) start = k;
+  const dates = h.dates.slice(start, end + 1);
   const series = {};
   tickers.forEach(t => {
     const s = h.series[t];
     if (!s) return;
-    const sl = s.slice(start);
+    const sl = s.slice(start, end + 1);
     const base = sl.find(v => v != null && v > 0);
     if (base == null) return;
     series[t] = sl.map(v => v != null ? (v / base) * 100 : null);
@@ -288,7 +300,7 @@ function rpIndexedSeries(ctx, tickers, days) {
 // Distinct, palette-consistent line colors per benchmark key (PDF chart)
 const RP_BENCH_COLORS = { SPY: '#C9A227', NDX: '#2E8B57', NIFTY50: '#7A5AF8', NIFTY500: '#E2622C' };
 
-// Total return over the shown window, straight from the indexed series (end - 100)
+// Price return over the shown window, straight from the indexed series (end - 100)
 function rpSeriesReturn(indexed, key) {
   const s = indexed && indexed.series[key];
   if (!s) return null;
@@ -309,7 +321,7 @@ function rpPagePerformance(ctx) {
     : [{ key: 'SPY', seriesKey: 'SPY', label: 'S&P 500' }];
 
   const tickers = [ctx.symbol].concat(sel.map(s => s.seriesKey));
-  const indexed = rpIndexedSeries(ctx, tickers, 252);
+  const indexed = rpIndexedSeries(ctx, tickers, 12);
 
   const seriesMeta = { [ctx.symbol]: { color: '#174EA6', w: 2.4 } };
   sel.forEach(s => { seriesMeta[s.seriesKey] = { color: RP_BENCH_COLORS[s.key] || '#C9A227', w: 2 }; });
@@ -353,7 +365,7 @@ function rpPagePerformance(ctx) {
     <div class="rp-section-title">Price Performance &amp; Returns</div>
 
     <div class="rp-subhead"><h3>Price Performance — 1 Year</h3>
-      <span class="rp-subhead-note">Total return, indexed to 100 · as of ${asOf}</span></div>
+      <span class="rp-subhead-note">Price return, indexed to 100 · as of ${asOf}</span></div>
     <div class="rp-chart-wrap">${chart}</div>
     <div class="rp-legend">${legend}</div>
 
@@ -370,7 +382,7 @@ function rpPagePerformance(ctx) {
     <div class="rp-callout">
       <b>Benchmarks.</b> Trailing returns compare ${rpEsc(ctx.symbol)} against the S&amp;P 500 (SPY) and Nasdaq-100
       (^NDX). Green figures indicate outperformance versus the benchmark over that window. All figures are computed
-      from the same adjusted (total-return) NAV series shown above.
+      from the same daily closing-price series shown above.
     </div>
 
     ${rpFooter(3, ctx)}
@@ -640,7 +652,7 @@ function rpPageSeasonality(ctx) {
     ${heatmap}
 
     <div class="rp-subhead" style="margin-top:22px;"><h3>Seasonality — Monthly Returns by Year</h3>
-      <span class="rp-subhead-note">Calendar-month total returns</span></div>
+      <span class="rp-subhead-note">Calendar-month price returns</span></div>
     ${seasonality}
     <div class="rp-fine">Avg = mean monthly return across the years shown. Current year is year-to-date.</div>
 

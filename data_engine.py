@@ -31,21 +31,24 @@ CACHE_ADJ  = os.path.join(BASE_DIR, "nav_core_adj.parquet")
 LEGACY_CACHE_RAW = os.path.join(BASE_DIR, "cache_raw.pkl.gz")
 LEGACY_CACHE_ADJ = os.path.join(BASE_DIR, "cache_adj.pkl.gz")
 
-PERIODS = {            # label : trading-day lookback
-    "1W":  5,
-    "15D": 15,
-    "1M":  21,
-    "2M":  42,
-    "3M":  63,
-    "6M":  126,
-    "9M":  189,
-    "12M": 252,
-    "2Y":  504,
-    "3Y":  756,
-    "5Y":  1260,
-    "7Y":  1764,
-    "10Y": 2520,
+PERIODS = {            # label : calendar lookback — start = the same date one
+                       # week/month/year earlier; if that was a weekend/holiday,
+                       # that market's previous close (Yahoo/Google/NSE convention)
+    "1W":  pd.DateOffset(weeks=1),
+    "15D": pd.DateOffset(days=15),
+    "1M":  pd.DateOffset(months=1),
+    "2M":  pd.DateOffset(months=2),
+    "3M":  pd.DateOffset(months=3),
+    "6M":  pd.DateOffset(months=6),
+    "9M":  pd.DateOffset(months=9),
+    "12M": pd.DateOffset(years=1),
+    "2Y":  pd.DateOffset(years=2),
+    "3Y":  pd.DateOffset(years=3),
+    "5Y":  pd.DateOffset(years=5),
+    "7Y":  pd.DateOffset(years=7),
+    "10Y": pd.DateOffset(years=10),
 }
+CAGR_YEARS = {"12M": 1, "2Y": 2, "3Y": 3, "5Y": 5, "7Y": 7, "10Y": 10}   # shown annualised
 
 MOMENTUM_WEIGHTS = {"1M": 0.20, "3M": 0.30, "6M": 0.30, "12M": 0.20}
 
@@ -218,6 +221,19 @@ def tickers_with_jumps(df, last_n=None):
     bad = ((ratio < JUMP_DOWN) | (ratio > JUMP_UP)).any()
     return sorted(t for t in bad[bad].index if t not in NO_JUMP_CHECK)
 
+def with_newer_cache(fresh, cached):
+    """Full-history download, plus any cached prices dated after a ticker's last
+    downloaded price — a long Yahoo download that comes back a day short must
+    not erase the latest close we already have."""
+    out = fresh
+    for t in fresh.columns:
+        last = fresh[t].last_valid_index()
+        if last is not None and t in cached.columns:
+            tail = cached[t].loc[cached.index > last].dropna()
+            if not tail.empty:
+                out = out.combine_first(tail.to_frame(t))
+    return out
+
 # ── Download fresh data — Priority Batched ────────────────────────────────────
 # Priority order (ensures most important symbols always get freshest data):
 #   Batch 1 — Market Indices  (index cards on dashboard)
@@ -299,10 +315,16 @@ if cache_loaded:
     # jump anywhere in the cache (catches splits Yahoo dated outside the window).
     acted  = (act1 | act2 | act3) & set(close_raw.columns)
     jumped = set(tickers_with_jumps(close_raw))
-    repair = sorted(acted | jumped)
+    # Indices + core ETFs get their full history re-downloaded EVERY day (~90
+    # tickers, a few seconds): a day Yahoo failed to send in some earlier run
+    # can never stay missing (a missing day shifted ^DJI's 1Y return by 2.4 pts),
+    # and any later Yahoo correction is picked up. Failed downloads keep cache.
+    refresh = (set(batch1) | set(batch2)) & set(close_raw.columns)
+    repair = sorted(acted | jumped | refresh)
     if repair:
-        print(f"[{datetime.now():%H:%M:%S}] Corporate-action repair for {len(repair)} tickers "
-              f"(split/distribution: {sorted(acted) or '-'}; suspicious jump: {sorted(jumped) or '-'})")
+        print(f"[{datetime.now():%H:%M:%S}] Full-history refresh for {len(repair)} tickers "
+              f"(indices + core ETFs: {len(refresh)}; split/distribution: {sorted(acted) or '-'}; "
+              f"suspicious jump: {sorted(jumped) or '-'})")
         full_start = (date.today() - pd.DateOffset(years=11)).strftime("%Y-%m-%d")
         fr, fa, _ = fetch_batch_retry(repair, "Full-history repair", full_start, YESTERDAY, rounds=3, wait=30)
         got = [t for t in repair if t in fr.columns and t in fa.columns and fr[t].notna().any()]
@@ -314,8 +336,8 @@ if cache_loaded:
         if restarted:
             print(f"[{datetime.now():%H:%M:%S}]   Yahoo restarted history (new/restructured fund?): {restarted}")
         if got:
-            close_raw = pd.concat([close_raw.drop(columns=got), fr[got]], axis=1).sort_index()
-            close_adj = pd.concat([close_adj.drop(columns=got), fa[got]], axis=1).sort_index()
+            close_raw = pd.concat([close_raw.drop(columns=got), with_newer_cache(fr[got], close_raw)], axis=1).sort_index()
+            close_adj = pd.concat([close_adj.drop(columns=got), with_newer_cache(fa[got], close_adj)], axis=1).sort_index()
         failed = sorted(set(repair) - set(got))
         if failed:
             print(f"[{datetime.now():%H:%M:%S}]   Repair download failed for {failed} — kept cached data.")
@@ -430,31 +452,36 @@ def last_complete_trading_day(df_index):
     return -1
 
 PRICE_IDX = last_complete_trading_day(close_raw.index)  # -1 (today settled) or -2 (prev day)
-NAV_DATE = close_raw.index[PRICE_IDX]
-NAV_DATE_POS = list(close_raw.index).index(NAV_DATE)
-PREV_NAV_DATE = close_raw.index[NAV_DATE_POS - 1]
+# US ETFs are dated by the last day the US market traded: the cache also holds
+# Nifty/Sensex/SSE/FTSE, whose rows can run past the last US close (US holidays).
+US_ANCHORS  = [t for t in ("SPY", "QQQ", "IVV", "VOO", "IWM", "DIA") if t in close_raw.columns]
+US_CALENDAR = close_raw[US_ANCHORS].dropna(how="all").index if US_ANCHORS else close_raw.index
+NAV_DATE = US_CALENDAR[-1] if len(US_CALENDAR) else close_raw.index[PRICE_IDX]
 print(f"[{datetime.now():%H:%M:%S}] NAV date: {NAV_DATE.date()}")
 
 # ───────────────────────────────────────────────────────────────────────────────────
-# Helper: safe percentage return
+# Helper: percentage return over a calendar period — ONE rule for the whole site
 # ───────────────────────────────────────────────────────────────────────────────────
-def pct_return(series, n_days, calendar_index):
-    """Return % price change using raw close prices — matches finance website returns."""
-    if len(series) < 5 or len(calendar_index) <= n_days:
+def pct_return(series, label, end_date=None):
+    """% change in Yahoo's closing price over PERIODS[label], ending end_date
+    (default NAV_DATE). Start = the close on the same date one week/month/year
+    earlier; on a weekend/holiday (or a day with no price) the previous close is
+    used — the market's value on that date. 1Y and longer are annualised (CAGR).
+    None when the fund/index has no price that far back."""
+    end_date = NAV_DATE if end_date is None else end_date
+    s = series.loc[:end_date].dropna()
+    if len(s) < 5:
         return None
-    current = series.asof(NAV_DATE)              # Always use settled NAV date
-    target_date = calendar_index[NAV_DATE_POS - n_days]
-    
-    # Find the price at or before target_date
-    past = series.asof(target_date)
-    
-    if pd.isna(current) or pd.isna(past) or past == 0:
+    start_date = end_date - PERIODS[label]
+    if s.index[0] > start_date:
         return None
-    
-    if n_days >= 252:
-        return round(((current / past) ** (252.0 / n_days) - 1) * 100, 2)
-    else:
-        return round((current / past - 1) * 100, 2)
+    current, past = float(s.iloc[-1]), float(s.asof(start_date))
+    if past == 0:
+        return None
+    years = CAGR_YEARS.get(label)
+    if years:
+        return round(((current / past) ** (1.0 / years) - 1) * 100, 2)
+    return round((current / past - 1) * 100, 2)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Calculate SPY returns (benchmark)
@@ -462,8 +489,8 @@ def pct_return(series, n_days, calendar_index):
 spy_returns = {}
 if BENCHMARK in close_raw.columns:
     spy_series = close_raw[BENCHMARK].dropna()
-    for label, days in PERIODS.items():
-        spy_returns[label] = pct_return(spy_series, days, close_raw.index)
+    for label in PERIODS:
+        spy_returns[label] = pct_return(spy_series, label)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Calculate returns for every ETF
@@ -516,8 +543,8 @@ for ticker in etf_meta:
     }
 
     # ── Multi-timeframe returns ────────────────────────────────────────────
-    for label, days in PERIODS.items():
-        val = pct_return(series_raw, days, close_raw.index)  # Use raw Close — matches what users see on finance sites
+    for label in PERIODS:
+        val = pct_return(series_raw, label)  # Use raw Close — matches what users see on finance sites
         row["returns"][label] = val
 
     # ── Momentum score ─────────────────────────────────────────────────────
@@ -595,24 +622,19 @@ for sym, name in MARKET_INDICES.items():
             prev_price = float(s.loc[sym_prev_nav]) if sym_prev_nav in s.index else None
             chg_1d     = round((price / prev_price - 1) * 100, 2) if prev_price else 0
 
-            sym_nav_pos = list(s.index).index(sym_nav)
-
-            def get_ret(n, _s=s, _pos=sym_nav_pos, _price=price):
-                if _pos >= n:
-                    past = float(_s.iloc[_pos - n])
-                    if past == 0 or pd.isna(past):
-                        return 0
-                    return round((_price / past - 1) * 100, 2)
-                return 0
+            # Same calendar rule as the ETFs, ending on this index's own last
+            # close (each market keeps its own holidays).
+            def get_ret(label, _s=s, _end=sym_nav):
+                return pct_return(_s, label, _end)
 
             index_stats.append({
                 "symbol":       sym,
                 "name":         name,
                 "price":        price,
                 "chg_1d":       chg_1d,
-                "chg_3m":       get_ret(63),
-                "chg_6m":       get_ret(126),
-                "chg_1y":       get_ret(252),
+                "chg_3m":       get_ret("3M"),
+                "chg_6m":       get_ret("6M"),
+                "chg_1y":       get_ret("12M"),
                 "as_of_date":   str(sym_nav.date()),   # Per-index actual settlement date
             })
 
@@ -642,9 +664,12 @@ for r in top10[:5]:
 
 # ── Write history.json (last 1Y normalised prices for comparison chart) ──────
 try:
-    HISTORY_DAYS = 1260  # ~5 trading years
-    hist_tickers = list(close_adj.columns)
-    hist_df = close_adj[hist_tickers].iloc[-HISTORY_DAYS:].copy()
+    # Yahoo's closing price (same series as every return on the site), so the
+    # charts' % lines agree with the tables. 5 calendar years + a margin so the
+    # 5Y chart button always has its start date.
+    hist_tickers = list(close_raw.columns)
+    hist_start = NAV_DATE - pd.DateOffset(years=5) - pd.Timedelta(days=10)
+    hist_df = close_raw[hist_tickers].loc[hist_start:].copy()
     
     # Normalise each series to 100 on its first valid date to support newer ETFs
     hist_norm = hist_df.copy()

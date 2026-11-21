@@ -5,6 +5,24 @@
 
 'use strict';
 
+// ── One date rule for every return and chart on the site ──
+// A period starts on the same date N months back; if there is no price that
+// day (weekend / holiday), the previous trading day's close is used — the same
+// rule the data engines use for every return figure (Yahoo/Google/NSE style).
+function shiftMonthsISO(iso, months) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 - months, 1));
+  const lastDay = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(d, lastDay));   // 31 Mar - 1M -> 28/29 Feb, not 3 Mar
+  return t.toISOString().slice(0, 10);
+}
+function idxOnOrBefore(dates, iso) {      // last index with dates[i] <= iso, else -1
+  let i = -1;
+  for (let k = 0; k < dates.length && dates[k] <= iso; k++) i = k;
+  return i;
+}
+const TIMEFRAME_MONTHS = { '1M': 1, '3M': 3, '6M': 6, '1Y': 12, '3Y': 36, '5Y': 60 };
+
 // ── State ─────────────────────────────────────────────────
 let DATA        = null;
 let filtered    = [];
@@ -320,13 +338,14 @@ function renderMarketBar() {
 }
 
 function buildMarketCard(idx) {
-  const c1d = idx.chg_1d || 0;
-  const c3m = idx.chg_3m || 0;
-  const c6m = idx.chg_6m || 0;
-  const c1y = idx.chg_1y || 0;
+  // null = not enough history for that period -> shown as "—", never as 0%
+  const c1d = idx.chg_1d ?? null;
+  const c3m = idx.chg_3m ?? null;
+  const c6m = idx.chg_6m ?? null;
+  const c1y = idx.chg_1y ?? null;
 
-  const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
-  const getCl = (v) => v >= 0 ? 'green' : 'red';
+  const fmt = (v) => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  const getCl = (v) => v == null ? '' : v >= 0 ? 'green' : 'red';
   
   const escSymbol = esc(idx.symbol);
   const escName = esc(idx.name);
@@ -780,8 +799,8 @@ async function setChartTimeframe(tf) {
       const toDateInput = document.getElementById('perfToDate');
       
       // Default to 1 Year range
-      const defaultFrom = new Date(new Date(lastDate).getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
+      const defaultFrom = shiftMonthsISO(lastDate, 12);
+
       fromDateInput.value = fromDateInput.value || defaultFrom;
       toDateInput.value = toDateInput.value || lastDate;
       
@@ -815,10 +834,7 @@ async function runPerfChart() {
   if (CURRENT_TIMEFRAME === 'custom') {
     const fromVal = document.getElementById('perfFromDate').value;
     const toVal = document.getElementById('perfToDate').value;
-    if (fromVal) {
-      const idx = dates.findIndex(d => d >= fromVal);
-      if (idx !== -1) startIdx = idx;
-    }
+    if (fromVal) startIdx = Math.max(0, idxOnOrBefore(dates, fromVal));
     if (toVal) {
       let idx = -1;
       for (let i = dates.length - 1; i >= 0; i--) {
@@ -830,21 +846,14 @@ async function runPerfChart() {
       if (idx !== -1) endIdx = idx;
     }
   } else {
-    let days = 365;
-    if (CURRENT_TIMEFRAME === '1M') days = 30;
-    else if (CURRENT_TIMEFRAME === '3M') days = 90;
-    else if (CURRENT_TIMEFRAME === '6M') days = 180;
-    else if (CURRENT_TIMEFRAME === '1Y') days = 365;
-    else if (CURRENT_TIMEFRAME === '3Y') days = 3 * 365;
-    else if (CURRENT_TIMEFRAME === '5Y') days = 5 * 365;
-
-    const lastDateStr = dates[dates.length - 1];
-    const lastDate = new Date(lastDateStr);
-    const targetDate = new Date(lastDate.getTime() - days * 24 * 60 * 60 * 1000);
-    const targetStr = targetDate.toISOString().split('T')[0];
-
-    const idx = dates.findIndex(d => d >= targetStr);
-    if (idx !== -1) startIdx = idx;
+    // End on the table's date (last US close), not on a later day when only
+    // Indian/UK markets traded, so the chart % equals the table's figure.
+    const asOf = (DATA && DATA.as_of_date) || dates[dates.length - 1];
+    const asOfIdx = idxOnOrBefore(dates, asOf);
+    if (asOfIdx !== -1) endIdx = asOfIdx;
+    const months = TIMEFRAME_MONTHS[CURRENT_TIMEFRAME] || 12;
+    const targetStr = shiftMonthsISO(dates[endIdx], months);
+    startIdx = Math.max(0, idxOnOrBefore(dates, targetStr));
   }
 
   if (startIdx >= endIdx) {
@@ -871,13 +880,14 @@ async function runPerfChart() {
     // Slice series data
     const rawSlice = series.slice(startIdx, endIdx + 1);
     
-    // Re-normalise to start at 0 (percentage return) on the first day of the slice
-    const baseVal = rawSlice[0];
-    if (baseVal === undefined || baseVal === 0) {
+    // Re-normalise to start at 0 (percentage return) on the first day with a
+    // price (an ETF younger than the window starts at 0% on its first day)
+    const baseVal = rawSlice.find(v => v != null && v > 0);
+    if (baseVal === undefined) {
       missing.push(ticker);
       return;
     }
-    const normalizedSlice = rawSlice.map(v => Number(((v / baseVal - 1) * 100).toFixed(4)));
+    const normalizedSlice = rawSlice.map(v => v == null ? null : Number(((v / baseVal - 1) * 100).toFixed(4)));
     const color = PERF_COLORS[i] || PERF_COLORS[PERF_COLORS.length - 1];
     
     datasets.push({
@@ -1147,8 +1157,8 @@ async function setIndexTimeframe(tf) {
       const fromInput = document.getElementById('indexFromDate');
       const toInput = document.getElementById('indexToDate');
       
-      const defaultFrom = new Date(new Date(lastDate).getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
+      const defaultFrom = shiftMonthsISO(lastDate, 12);
+
       fromInput.value = fromInput.value || defaultFrom;
       toInput.value = toInput.value || lastDate;
       fromInput.min = hist.dates[0];
@@ -1186,10 +1196,7 @@ async function updateIndexChart() {
   if (INDEX_CHART_TIMEFRAME === 'Custom') {
     const fromVal = document.getElementById('indexFromDate').value;
     const toVal = document.getElementById('indexToDate').value;
-    if (fromVal) {
-      const idx = dates.findIndex(d => d >= fromVal);
-      if (idx !== -1) startIdx = idx;
-    }
+    if (fromVal) startIdx = Math.max(0, idxOnOrBefore(dates, fromVal));
     if (toVal) {
       let idx = -1;
       for (let i = dates.length - 1; i >= 0; i--) {
@@ -1201,20 +1208,9 @@ async function updateIndexChart() {
       if (idx !== -1) endIdx = idx;
     }
   } else if (INDEX_CHART_TIMEFRAME !== 'All') {
-    let days = 365;
-    if (INDEX_CHART_TIMEFRAME === '1M') days = 30;
-    else if (INDEX_CHART_TIMEFRAME === '3M') days = 90;
-    else if (INDEX_CHART_TIMEFRAME === '6M') days = 180;
-    else if (INDEX_CHART_TIMEFRAME === '1Y') days = 365;
-    else if (INDEX_CHART_TIMEFRAME === '3Y') days = 3 * 365;
-    else if (INDEX_CHART_TIMEFRAME === '5Y') days = 5 * 365;
-
-    const lastDate = new Date(dates[dates.length - 1]);
-    const targetDate = new Date(lastDate.getTime() - days * 24 * 60 * 60 * 1000);
-    const targetStr = targetDate.toISOString().split('T')[0];
-
-    const idx = dates.findIndex(d => d >= targetStr);
-    if (idx !== -1) startIdx = idx;
+    const months = TIMEFRAME_MONTHS[INDEX_CHART_TIMEFRAME] || 12;
+    const targetStr = shiftMonthsISO(dates[dates.length - 1], months);
+    startIdx = Math.max(0, idxOnOrBefore(dates, targetStr));
   }
 
   if (startIdx >= endIdx) {
