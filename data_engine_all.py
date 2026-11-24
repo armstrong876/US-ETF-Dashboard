@@ -34,6 +34,7 @@ PERIODS = {            # calendar lookback — identical rule to data_engine.py
 }
 CAGR_YEARS = {"12M": 1, "2Y": 2, "3Y": 3, "5Y": 5, "7Y": 7, "10Y": 10}   # shown annualised
 US_ANCHOR_TICKERS = ("SPY", "QQQ", "IVV", "VOO", "IWM", "DIA")         # define the US trading calendar
+STALE_DAYS = 5   # an ETF whose last price is older than this many US trading days is treated as closed (left out)
 
 MOMENTUM_WEIGHTS = {"1M": 0.20, "3M": 0.30, "6M": 0.30, "12M": 0.20}
 
@@ -74,7 +75,7 @@ if os.path.exists(YF_FILE):
         pass
 
 tickers_meta = {e["symbol"]: e for e in etf_meta}
-tickers      = [e["symbol"] for e in etf_meta]
+tickers      = list(dict.fromkeys(e["symbol"] for e in etf_meta))   # each ticker once (the list has a few repeats)
 
 # Ensure Market Indices are in tickers
 for sym in MARKET_INDICES:
@@ -189,6 +190,17 @@ def tickers_with_gaps(df, skip=()):
     gaps = (inside & ~have).sum()
     return sorted(gaps[gaps > 0].index)
 
+def tickers_behind(df, skip=(), recent=STALE_DAYS):
+    """US tickers whose last price is a few US trading days old (missing the
+    latest days, e.g. after a rate-limited download) — still trading, so worth
+    re-downloading. Funds silent for longer are treated as closed (not retried)."""
+    anchors = [t for t in US_ANCHOR_TICKERS if t in df.columns]
+    cal = df[anchors].dropna(how="all").index if anchors else df.index
+    if len(cal) <= recent:
+        return []
+    last = df[[c for c in df.columns if c not in skip and c not in MARKET_INDICES]].apply(lambda s: s.last_valid_index())
+    return sorted(t for t, d in last.items() if d is not None and cal[-recent - 1] <= d < cal[-1])
+
 # ── Load or Create Cache ──────────────────────────────────────────────────────
 close_raw = pd.DataFrame()
 close_adj = pd.DataFrame()
@@ -298,11 +310,13 @@ if cache_loaded:
     # history, so a gap left by an old failed download gets filled.
     refresh = (set(batch1) | set(batch2)) & set(close_raw.columns)
     gapped  = set(tickers_with_gaps(close_raw, skip=refresh))
-    repair = sorted(acted | jumped | refresh | gapped)
+    behind  = set(tickers_behind(close_raw, skip=refresh))   # missing the latest few days
+    repair = sorted(acted | jumped | refresh | gapped | behind)
     if repair:
         print(f"[{datetime.now():%H:%M:%S}] Full-history repair for {len(repair)} tickers "
               f"(indices + core ETFs: {len(refresh)}, split/distribution: {len(acted)}, "
-              f"suspicious jump: {len(jumped)}, missing days: {len(gapped)})")
+              f"suspicious jump: {len(jumped)}, missing days: {len(gapped)}, "
+              f"missing latest days: {len(behind)})")
         full_start = (pd.Timestamp.today() - pd.DateOffset(years=11)).strftime("%Y-%m-%d")
         # Smaller, slower batches + 3 backed-off retry rounds: a burst of 11-year
         # downloads right after the incremental pass gets Yahoo-rate-limited
@@ -448,6 +462,11 @@ if BENCHMARK in close_raw.columns:
 
 print(f"[{datetime.now():%H:%M:%S}] Calculating returns...")
 results = []
+# A fund with no price for more than STALE_DAYS US trading days has stopped
+# trading (closed/delisted): its frozen last price would show as 0.00% returns,
+# so it is left out. It reappears automatically if it trades again.
+STALE_CUTOFF = US_CALENDAR[-STALE_DAYS - 1] if len(US_CALENDAR) > STALE_DAYS else None
+closed = []
 
 for ticker in tickers:
     if ticker not in close_raw.columns or ticker not in close_adj.columns:
@@ -456,6 +475,9 @@ for ticker in tickers:
     series_raw = close_raw[ticker].dropna()
     series_adj = close_adj[ticker].dropna()
     if len(series_raw) < 10 or len(series_adj) < 10:
+        continue
+    if STALE_CUTOFF is not None and ticker not in MARKET_INDICES and series_raw.index[-1] < STALE_CUTOFF:
+        closed.append(ticker)
         continue
 
     meta = tickers_meta.get(ticker, {})
@@ -596,3 +618,6 @@ try:
 except Exception as _e:
     print(f"[{datetime.now():%H:%M:%S}] Supabase all-sync skipped ({_e}).")
 print(f"   ETFs processed : {len(results)}")
+if closed:
+    print(f"   Left out — no price for over {STALE_DAYS} US trading days (closed/delisted): "
+          f"{len(closed)} {closed[:60]}")
