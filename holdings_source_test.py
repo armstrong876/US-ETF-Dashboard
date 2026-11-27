@@ -61,16 +61,32 @@ def vaneck():
     b = get("https://www.vaneck.com/us/en/etf/equity/smh/holdings/download/xlsx/").content
     raw = pd.read_excel(io.BytesIO(b), header=None)
     w = num(pd.read_excel(io.BytesIO(b), header=2)["% of Net Assets"]).dropna()
-    return len(w), raw.iloc[0, 1], w.sum()
+    return len(w), first_date(" ".join(str(x) for x in raw.head(2).values.ravel())), w.sum()
 
 
 def globalx():
-    page = get("https://www.globalxetfs.com/funds/ura/").text
-    m = re.search(r'URA-holdings-([A-Za-z]{3})-(\d+)-(\d{4})\.csv', page)
-    d = pd.to_datetime(f"{m.group(1)} {m.group(2)} {m.group(3)}").strftime("%Y%m%d")
-    lines = get(f"https://assets.globalxetfs.com/funds/holdings/ura_full-holdings_{d}.csv").text.splitlines()
-    w = num(pd.read_csv(io.StringIO("\n".join(lines[2:])), dtype=str)["% of Net Assets"]).dropna()
-    return len(w), lines[1], w.sum()
+    # Diagnostic: what does the fund page return on this server?
+    try:
+        r = get("https://www.globalxetfs.com/funds/ura/")
+        print(f"     GlobalX page: HTTP {r.status_code}, {len(r.text)} chars, "
+              f"file name on page: {bool(re.search(r'URA-holdings-', r.text))}, title: "
+              f"{(re.search(r'<title>([^<]*)', r.text) or [None, '-'])[1][:80]}", flush=True)
+    except Exception as e:
+        print("     GlobalX page error:", type(e).__name__, flush=True)
+    # Direct download: the file name is the date, so try the last 10 days (newest first)
+    for d in pd.date_range(end=pd.Timestamp.utcnow().normalize(), periods=10)[::-1]:
+        r = get(f"https://assets.globalxetfs.com/funds/holdings/ura_full-holdings_{d:%Y%m%d}.csv")
+        print(f"     GlobalX direct {d:%Y-%m-%d}: HTTP {r.status_code}", flush=True)
+        if r.status_code == 200 and "% of Net Assets" in r.text:
+            lines = r.text.splitlines()
+            w = num(pd.read_csv(io.StringIO("\n".join(lines[2:])), dtype=str)["% of Net Assets"]).dropna()
+            return len(w), lines[1], w.sum()
+    raise RuntimeError("no file found for the last 10 days")
+
+
+def first_date(text):
+    m = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', text)
+    return m.group(1) if m else "?"
 
 
 def firsttrust():
@@ -78,8 +94,7 @@ def firsttrust():
     t = max(pd.read_html(io.StringIO(page)), key=len)
     t.columns = t.iloc[0]
     w = num(t.iloc[1:]["Weighting"]).dropna()
-    m = re.search(r'[Hh]oldings? as of[^0-9]*([0-9/]+)', page)
-    return len(w), m.group(1) if m else "?", w.sum()
+    return len(w), first_date(re.sub(r'<[^>]+>', ' ', page)), w.sum()
 
 
 def vanguard():
