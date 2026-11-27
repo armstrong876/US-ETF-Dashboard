@@ -1,0 +1,46 @@
+name: Keep schedules alive
+
+# GitHub pauses ALL scheduled workflows in a public repo after 60 days with no
+# commits. Our daily / weekly / holdings jobs save data to Supabase (no commits),
+# so a quiet spell would silently stop them. Every Monday this job checks the age
+# of the last commit; only if it is 45+ days old does it make one tiny commit
+# (to .github/keepalive.txt), which resets GitHub's 60-day clock.
+# The file lives under .github/, which the Netlify ignore rule excludes, so this
+# commit never triggers a website deploy.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'        # every Monday 08:30 AM IST
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Commit now even if the repo was active recently (for testing)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Commit only if the repo has been quiet for 45+ days
+        run: |
+          LAST=$(git log -1 --format=%ct)
+          DAYS=$(( ( $(date +%s) - LAST ) / 86400 ))
+          echo "Last commit was $DAYS day(s) ago."
+          if [ "$DAYS" -lt 45 ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "Recent activity - nothing to do."
+            exit 0
+          fi
+          date -u +"%Y-%m-%d %H:%M UTC" > .github/keepalive.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive.txt
+          git commit -m "Keep scheduled jobs active (repo quiet for $DAYS days)"
+          git push
+          echo "Keep-alive commit pushed."
