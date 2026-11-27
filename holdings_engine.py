@@ -352,7 +352,7 @@ def is_stock(r):
 
 
 # ── step 2: classify every stock ───────────────────────────────────────────
-def classify(funds, cache):
+def classify(funds, cache, save_progress=None):
     """Adds to every stock row: _y (validated Yahoo symbol), _ish (official iShares row)."""
     look = []
     for sym in LOOKUP_ONLY:
@@ -482,10 +482,17 @@ def classify(funds, cache):
     # Yahoo sector/country only for stocks with no official classification (cached forever)
     need = sorted({r["_y"] for _, r in items if r["_y"] and not r.get("_ish") and r["_y"] not in cache})
     log(f"Yahoo profile lookups needed: {len(need)} (cached: {len(cache)})")
+    # In chunks of 300, saving the cache after each, so a run that is cut off
+    # (time limit) keeps its progress and the next run starts from there.
     with ThreadPoolExecutor(4) as ex:
-        for s_, prof in zip(need, ex.map(yahoo_profile, need)):
-            if prof:
-                cache[s_] = prof
+        for i in range(0, len(need), 300):
+            chunk = need[i:i + 300]
+            for s_, prof in zip(chunk, ex.map(yahoo_profile, chunk)):
+                if prof:
+                    cache[s_] = prof
+            if save_progress:
+                save_progress(cache)
+            log(f"  profiles {min(i + 300, len(need))}/{len(need)} done (cache saved)")
     for s_ in [x for x in need if x not in cache]:                # slow retry for rate-limited ones
         prof = yahoo_profile(s_)
         if prof:
@@ -692,7 +699,7 @@ def main():
     profiles = load_profiles(do_push)
     funds, failed = collect(meta, symbols)
     stock_funds = {s: d for s, d in funds.items() if not d.get("commodity")}
-    items, quotes = classify(stock_funds, cache)
+    items, quotes = classify(stock_funds, cache, save_progress=lambda c: save_cache(c, do_push))
     save_cache(cache, do_push)
     rate = fx_to_usd({(quotes.get(r["_y"]) or {}).get("currency") for _, r in items if r["_y"]} | {"GBP", "ILS", "ZAR"})
 

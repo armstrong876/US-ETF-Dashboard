@@ -42,7 +42,7 @@ env:
 jobs:
   etf-details:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180     # fundamentals step alone can take ~1 h; the holdings step ~20-30 min (first run longer)
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
