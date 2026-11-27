@@ -1,38 +1,36 @@
-name: Monthly ETF Refresh — Details + Key Fundamentals
+name: Holdings Refresh (1st & 16th) — Holdings + Key Fundamentals
 
-# MONTHLY (12th): two refreshes, both from GitHub's servers, both published to
-# Supabase — no git commit, no Netlify deploy.
-#   1. Composition of all 80 whitelist ETFs — top-15 holdings, sector / country /
-#      market-cap breakdown — scraped from etfdb.com -> site-data/details/{SYMBOL}.json.
-#   2. Key Fundamentals (AUM, expense ratio, P/E, yield, inception) from yfinance
+# TWICE A MONTH (1st and 16th): two refreshes, both from GitHub's servers, both
+# published to Supabase — no git commit, no Netlify deploy.
+#   1. Key Fundamentals (AUM, expense ratio, P/E, yield, inception) from yfinance
 #      -> yf_profiles.json (private bucket); data_engine.py merges it into
 #      dashboard.json on the daily run, feeding the "Key Fundamentals" section.
+#   2. Holdings of all 80 universe ETFs from the FUND COMPANIES' OWN FILES
+#      (holdings_engine.py + holdings_sources.py): full holdings list, sector /
+#      country / market-cap split worked out from those holdings.
+#      (Replaces the etfdb scraper — etfdb blocks GitHub since Sep 2026.
+#       The old etf_details_engine.py is kept in the repo only as a backup.)
 #
 # WHERE THE DATA LANDS (single source of truth = Supabase, never the repo):
-#   ETF Data/composition/{SYMBOL}.parquet   permanent month-by-month history,
-#                                           one row per holding/sector/country/
-#                                           region/mcap/fundamental, each tagged
-#                                           with its source. Read by the
-#                                           Portfolio Builder.
-#   site-data/details/{SYMBOL}.json         latest month only; what the browser
-#                                           fetches for the ETF one-pager.
+#   site-data/details/{SYMBOL}.json         what the ETF page reads
+#   site-data/holdings/{SYMBOL}.json        every holding (for the Portfolio Builder)
+#   ETF Data/composition/{SYMBOL}.parquet   dated history, every row tagged with its source
+#   ETF Data/nav/etf_derived.json           holdings count + top-10 % for the daily dashboard
+#   ETF Data/holdings/stock_cache.json      per-stock sector/country, reused next run
 #
-# SOURCE MAP (fixed — never mixed):
-#   composition (holdings/sector/country/region/mcap) -> etfdb
-#   fundamentals (aum/pe/expense_ratio/yield/inception) -> yfinance
-#   beta + risk ratios -> CALCULATED FROM NAVs by etf_analytics_engine.py
+# SOURCES (official only): iShares, State Street, VanEck, Global X, First Trust,
+# Vanguard files; SEC Form N-PORT filing where a company blocks downloads
+# (Invesco) or publishes none; Yahoo for FNGS (an ETN) and per-stock market cap.
 #
-# Runs on the 12th of each month (Ashwin's 11-15 window), FROM GITHUB'S SERVERS
-# so his own network is never the one hitting etfdb -> no block risk. The engine
-# fetches gently (4s gap between ETFs, retry + real UA), stamps each snapshot with
-# the END OF THE PREVIOUS COMPLETED MONTH, and uploads per-ETF files to Supabase.
-# There is NO git commit and NO Netlify deploy — the live site reads the fresh
-# files through the netlify.toml /details/* proxy.
+# FAILURE = VISIBLE: if any fund cannot be downloaded, fails a check (stale date,
+# weights not ~100 %, < 85 % classified, holdings count collapsed) or had to fall
+# back to the SEC filing, that fund's previous file stays live and THIS RUN ENDS
+# FAILED with the reason in the log's summary block.
 
 on:
   schedule:
-    - cron: '30 2 12 * *'   # 12th of every month, 08:00 AM IST (2:30 AM UTC)
-  workflow_dispatch:          # Allows a manual run any time from the GitHub UI
+    - cron: '30 2 1,16 * *'   # 1st and 16th of every month, 08:00 AM IST (2:30 AM UTC)
+  workflow_dispatch:            # Allows a manual run any time from the GitHub UI
 
 # Supabase credentials (encrypted repo secrets) — available to every step.
 env:
@@ -44,6 +42,7 @@ env:
 jobs:
   etf-details:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,25 +50,26 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # pandas + pyarrow are REQUIRED: the composition history is Parquet.
-          pip install requests beautifulsoup4 yfinance pandas pyarrow
+          # pandas + pyarrow: Parquet history. openpyxl: State Street / VanEck Excel.
+          # lxml: First Trust page tables.
+          pip install requests beautifulsoup4 yfinance pandas pyarrow openpyxl lxml
 
       # ORDER IS DELIBERATE — fundamentals FIRST.
-      # etf_details_engine.py reads yf_profiles.json and writes those values into
-      # each ETF's Parquet row for THIS month. If the engine ran first it would
-      # stamp last month's fundamentals with this month's as_of date.
+      # holdings_engine.py reads yf_profiles.json and writes those values into
+      # each ETF's Parquet snapshot. If it ran first it would stamp the previous
+      # fundamentals with this snapshot's date.
       - name: 1/2  Refresh Key Fundamentals (yfinance) -> yf_profiles.json -> Supabase
         run: python update_fundamentals.py
 
-      - name: 2/2  Fetch all 80 ETF compositions (etfdb) -> Parquet + JSON -> Supabase
+      - name: 2/2  Holdings of all 80 ETFs (fund-company files) -> JSON + Parquet -> Supabase
         env:
-          PUSH: '1'            # upload the per-ETF Parquet history AND the site JSON
-        run: python etf_details_engine.py --all
+          PUSH: '1'            # upload site JSON, full holdings, Parquet history, stock cache
+        run: python holdings_engine.py --all
 
       - name: Done
-        run: echo "ETF details + key fundamentals published to Supabase. No git commit / no Netlify deploy."
+        run: echo "Holdings + key fundamentals published to Supabase. No git commit / no Netlify deploy."

@@ -68,8 +68,10 @@ def _frame(rows):
 
 # ── row builders ──────────────────────────────────────────────────────────
 def composition_rows(rec):
-    """etfdb composition record -> long rows. `rec` is etf_details_engine's dict."""
-    as_of, src = rec["as_of"], "etfdb"
+    """Composition record -> long rows. `rec` comes from holdings_engine.py (source =
+    the fund company's file / SEC filing, passed as rec["history_source"]) or from the
+    retired etf_details_engine.py (etfdb)."""
+    as_of, src = rec["as_of"], rec.get("history_source") or "etfdb"
     rows = []
     for h in rec.get("holdings") or []:
         rows.append((as_of, "holding", h["sym"], h.get("wt"), h.get("name"), src))
