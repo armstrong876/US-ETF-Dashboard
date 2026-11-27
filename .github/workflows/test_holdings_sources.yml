@@ -1,0 +1,23 @@
+name: TEST holdings sources (read-only)
+
+# ONE-OFF TEST. Checks whether GitHub's servers can download each official
+# holdings source. Manual run only. No secrets, no Supabase, no files written.
+# Delete this workflow and holdings_source_test.py after the test.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: pip install requests pandas openpyxl lxml yfinance
+      - run: python holdings_source_test.py
